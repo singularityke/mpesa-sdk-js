@@ -16,17 +16,143 @@ import {
   STKCallback,
   C2BCallback,
 } from "../types/mpesa";
+import {
+  MpesaValidationError,
+  MpesaTimeoutError,
+  MpesaNetworkError,
+  parseMpesaApiError,
+} from "../utils/errors";
+import { retryWithBackoff, RetryOptions } from "../utils/retry";
+import { RateLimiter, RedisRateLimiter, RedisLike } from "../utils/ratelimiter";
+
+export interface MpesaClientOptions {
+  callbackOptions?: CallbackHandlerOptions;
+  retryOptions?: RetryOptions;
+  rateLimitOptions?: {
+    enabled?: boolean;
+    maxRequests?: number;
+    windowMs?: number;
+    redis?: RedisLike;
+  };
+  requestTimeout?: number;
+}
 
 export class MpesaClient {
   private config: MpesaConfig;
   private auth: MpesaAuth;
   private plugins: MpesaPlugin[] = [];
   private callbackHandler: MpesaCallbackHandler;
+  private retryOptions: RetryOptions;
+  private rateLimiter: RateLimiter | RedisRateLimiter | null = null;
+  private readonly REQUEST_TIMEOUT: number;
 
-  constructor(config: MpesaConfig, callbackOptions?: CallbackHandlerOptions) {
+  constructor(config: MpesaConfig, options: MpesaClientOptions = {}) {
     this.config = config;
     this.auth = new MpesaAuth(config);
-    this.callbackHandler = new MpesaCallbackHandler(callbackOptions);
+    this.callbackHandler = new MpesaCallbackHandler(options.callbackOptions);
+    this.retryOptions = options.retryOptions || {};
+    this.REQUEST_TIMEOUT = options.requestTimeout || 30000;
+
+    // Setup rate limiting
+    if (options.rateLimitOptions?.enabled !== false) {
+      const rateLimitOpts = {
+        maxRequests: options.rateLimitOptions?.maxRequests || 100,
+        windowMs: options.rateLimitOptions?.windowMs || 60000,
+      };
+
+      if (options.rateLimitOptions?.redis) {
+        this.rateLimiter = new RedisRateLimiter(
+          options.rateLimitOptions.redis,
+          rateLimitOpts,
+        );
+      } else {
+        this.rateLimiter = new RateLimiter(rateLimitOpts);
+      }
+    }
+  }
+
+  /**
+   * Make HTTP request with error handling
+   */
+  private async makeRequest<T>(
+    endpoint: string,
+    payload: any,
+    rateLimitKey?: string,
+  ): Promise<T> {
+    return retryWithBackoff(async () => {
+      // Check rate limit
+      if (this.rateLimiter && rateLimitKey) {
+        await this.rateLimiter.checkLimit(rateLimitKey);
+      }
+
+      const token = await this.auth.getAccessToken();
+      const baseUrl = this.auth.getBaseUrl();
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        this.REQUEST_TIMEOUT,
+      );
+
+      try {
+        const response = await fetch(`${baseUrl}${endpoint}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          throw parseMpesaApiError(response.status, errorBody);
+        }
+
+        return (await response.json()) as T;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+
+        if (error.name === "AbortError") {
+          throw new MpesaTimeoutError(`Request timed out for ${endpoint}`);
+        }
+
+        if (error.statusCode) {
+          throw error;
+        }
+
+        throw new MpesaNetworkError(
+          `Network error on ${endpoint}: ${error.message}`,
+          true,
+          error,
+        );
+      }
+    }, this.retryOptions);
+  }
+
+  /**
+   * Validate phone number format
+   */
+  private validateAndFormatPhone(phone: string): string {
+    let formatted = phone.replace(/[\s\-\+]/g, "");
+
+    if (formatted.startsWith("0")) {
+      formatted = "254" + formatted.substring(1);
+    } else if (!formatted.startsWith("254")) {
+      formatted = "254" + formatted;
+    }
+
+    // Validate Kenyan phone number
+    if (!/^254[17]\d{8}$/.test(formatted)) {
+      throw new MpesaValidationError(
+        `Invalid phone number format: ${phone}. Must be a valid Kenyan number.`,
+      );
+    }
+
+    return formatted;
   }
 
   /**
@@ -42,21 +168,22 @@ export class MpesaClient {
    * Initiate STK Push (Lipa Na M-Pesa Online)
    */
   async stkPush(request: STKPushRequest): Promise<STKPushResponse> {
-    const token = await this.auth.getAccessToken();
-    const baseUrl = this.auth.getBaseUrl();
-
-    // Format phone number
-    let phone = request.phoneNumber.replace(/[\s\-\+]/g, "");
-    if (phone.startsWith("0")) {
-      phone = "254" + phone.substring(1);
-    } else if (!phone.startsWith("254")) {
-      phone = "254" + phone;
-    }
-
-    // Validate amount
+    // Validate inputs
     if (request.amount < 1) {
-      throw new Error("Amount must be at least 1 KES");
+      throw new MpesaValidationError("Amount must be at least 1 KES");
     }
+
+    if (!request.accountReference || request.accountReference.length > 13) {
+      throw new MpesaValidationError(
+        "Account reference is required and must be 13 characters or less",
+      );
+    }
+
+    if (!request.transactionDesc) {
+      throw new MpesaValidationError("Transaction description is required");
+    }
+
+    const phone = this.validateAndFormatPhone(request.phoneNumber);
 
     const payload = {
       BusinessShortCode: this.config.shortcode,
@@ -72,21 +199,11 @@ export class MpesaClient {
       TransactionDesc: request.transactionDesc,
     };
 
-    const response = await fetch(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`STK Push failed: ${error}`);
-    }
-
-    return (await response.json()) as STKPushResponse;
+    return this.makeRequest<STKPushResponse>(
+      "/mpesa/stkpush/v1/processrequest",
+      payload,
+      `stk:${phone}`,
+    );
   }
 
   /**
@@ -95,8 +212,9 @@ export class MpesaClient {
   async stkQuery(
     request: TransactionStatusRequest,
   ): Promise<TransactionStatusResponse> {
-    const token = await this.auth.getAccessToken();
-    const baseUrl = this.auth.getBaseUrl();
+    if (!request.checkoutRequestID) {
+      throw new MpesaValidationError("CheckoutRequestID is required");
+    }
 
     const payload = {
       BusinessShortCode: this.config.shortcode,
@@ -105,21 +223,11 @@ export class MpesaClient {
       CheckoutRequestID: request.checkoutRequestID,
     };
 
-    const response = await fetch(`${baseUrl}/mpesa/stkpushquery/v1/query`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`STK Query failed: ${error}`);
-    }
-
-    return (await response.json()) as TransactionStatusResponse;
+    return this.makeRequest<TransactionStatusResponse>(
+      "/mpesa/stkpushquery/v1/query",
+      payload,
+      `query:${request.checkoutRequestID}`,
+    );
   }
 
   /**
@@ -128,8 +236,11 @@ export class MpesaClient {
   async registerC2BUrl(
     request: C2BRegisterRequest,
   ): Promise<C2BRegisterResponse> {
-    const token = await this.auth.getAccessToken();
-    const baseUrl = this.auth.getBaseUrl();
+    if (!request.confirmationURL || !request.validationURL) {
+      throw new MpesaValidationError(
+        "Both confirmationURL and validationURL are required",
+      );
+    }
 
     const payload = {
       ShortCode: request.shortCode,
@@ -138,21 +249,11 @@ export class MpesaClient {
       ValidationURL: request.validationURL,
     };
 
-    const response = await fetch(`${baseUrl}/mpesa/c2b/v1/registerurl`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`C2B registration failed: ${error}`);
-    }
-
-    return (await response.json()) as C2BRegisterResponse;
+    return this.makeRequest<C2BRegisterResponse>(
+      "/mpesa/c2b/v1/registerurl",
+      payload,
+      "c2b:register",
+    );
   }
 
   /**
@@ -225,16 +326,35 @@ export class MpesaClient {
   }
 
   /**
-   * Parse C2B callback without handling ( for testing)
+   * Parse C2B callback without handling (for testing)
    */
   parseC2BCallback(callback: C2BCallback): ParsedC2BCallback {
     return this.callbackHandler.parseC2BCallback(callback);
   }
 
   /**
-   * Get configuration (I want this for plugins)
+   * Get configuration (for plugins)
    */
   getConfig(): MpesaConfig {
     return this.config;
+  }
+
+  /**
+   * Get rate limiter usage for a key
+   */
+  getRateLimitUsage(key: string) {
+    if (this.rateLimiter instanceof RateLimiter) {
+      return this.rateLimiter.getUsage(key);
+    }
+    return null;
+  }
+
+  /**
+   * Cleanup resources
+   */
+  destroy(): void {
+    if (this.rateLimiter instanceof RateLimiter) {
+      this.rateLimiter.destroy();
+    }
   }
 }
