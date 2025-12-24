@@ -1,6 +1,7 @@
 {
-  "name": "mpesa-sdk-js",
-  "version": "1.0.0",
+  "name": "singularity-payments",
+  "version": "0.1.0-alpha.0",
+  "private": true,
   "description": "",
   "main": "index.js",
   "scripts": {
