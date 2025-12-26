@@ -1,4 +1,12 @@
-import { STKCallback, CallbackMetadata, C2BCallback } from "../types/mpesa";
+import {
+  STKCallback,
+  CallbackMetadata,
+  C2BCallback,
+  B2BCallback,
+  ReversalCallback,
+  TransactionStatusCallback,
+  AccountBalanceCallback,
+} from "../types/mpesa";
 
 export interface ParsedCallbackData {
   merchantRequestId: string;
@@ -284,6 +292,175 @@ export class MpesaCallbackHandler {
     if (this.options.onC2BConfirmation) {
       await this.options.onC2BConfirmation(this.parseC2BCallback(callback));
     }
+  }
+
+  /**
+   * Parse B2C callback data
+   */
+  parseB2CCallback(callback: B2BCallback): {
+    isSuccess: boolean;
+    transactionId?: string;
+    amount?: number;
+    recipientPhone?: string;
+    charges?: number;
+    errorMessage?: string;
+  } {
+    const result = callback.Result;
+    const parsed: any = {
+      isSuccess: result.ResultCode === 0,
+      errorMessage:
+        result.ResultCode !== 0
+          ? this.getErrorMessage(result.ResultCode)
+          : undefined,
+    };
+
+    if (result.ResultCode === 0 && result.ResultParameters) {
+      result.ResultParameters.ResultParameter.forEach((param) => {
+        switch (param.Key) {
+          case "TransactionReceipt":
+            parsed.transactionId = String(param.Value);
+            break;
+          case "TransactionAmount":
+            parsed.amount = Number(param.Value);
+            break;
+          case "ReceiverPartyPublicName":
+            parsed.recipientPhone = String(param.Value);
+            break;
+          case "B2CChargesPaidAccountAvailableFunds":
+            parsed.charges = Number(param.Value);
+            break;
+        }
+      });
+    }
+
+    return parsed;
+  }
+  /**
+   * Parse B2B callback
+   */
+  parseB2BCallback(callback: B2BCallback): {
+    isSuccess: boolean;
+    transactionId?: string;
+    amount?: number;
+    errorMessage?: string;
+  } {
+    const result = callback.Result;
+    const parsed: any = {
+      isSuccess: result.ResultCode === 0,
+      errorMessage:
+        result.ResultCode !== 0
+          ? this.getErrorMessage(result.ResultCode)
+          : undefined,
+    };
+
+    if (result.ResultCode === 0 && result.ResultParameters) {
+      result.ResultParameters.ResultParameter.forEach((param) => {
+        switch (param.Key) {
+          case "TransactionReceipt":
+            parsed.transactionId = String(param.Value);
+            break;
+          case "TransactionAmount":
+            parsed.amount = Number(param.Value);
+            break;
+        }
+      });
+    }
+
+    return parsed;
+  }
+  /**
+   * Parse Account Balance callback
+   */
+  parseAccountBalanceCallback(callback: AccountBalanceCallback): {
+    isSuccess: boolean;
+    workingBalance?: number;
+    availableBalance?: number;
+    bookedBalance?: number;
+    errorMessage?: string;
+  } {
+    const result = callback.Result;
+    const parsed: any = {
+      isSuccess: result.ResultCode === 0,
+      errorMessage:
+        result.ResultCode !== 0
+          ? this.getErrorMessage(result.ResultCode)
+          : undefined,
+    };
+
+    if (result.ResultCode === 0 && result.ResultParameters) {
+      result.ResultParameters.ResultParameter.forEach((param) => {
+        switch (param.Key) {
+          case "WorkingAccountAvailableFunds":
+            parsed.workingBalance = Number(param.Value);
+            break;
+          case "AvailableBalance":
+            parsed.availableBalance = Number(param.Value);
+            break;
+          case "BookedBalance":
+            parsed.bookedBalance = Number(param.Value);
+            break;
+        }
+      });
+    }
+
+    return parsed;
+  }
+  /**
+   * Parse Transaction Status callback
+   */
+  parseTransactionStatusCallback(callback: TransactionStatusCallback): {
+    isSuccess: boolean;
+    receiptNo?: string;
+    amount?: number;
+    completedTime?: string;
+    originatorConversationId?: string;
+    errorMessage?: string;
+  } {
+    const result = callback.Result;
+    const parsed: any = {
+      isSuccess: result.ResultCode === 0,
+      originatorConversationId: result.OriginatorConversationID,
+      errorMessage:
+        result.ResultCode !== 0
+          ? this.getErrorMessage(result.ResultCode)
+          : undefined,
+    };
+
+    if (result.ResultCode === 0 && result.ResultParameters) {
+      result.ResultParameters.ResultParameter.forEach((param) => {
+        switch (param.Key) {
+          case "ReceiptNo":
+            parsed.receiptNo = String(param.Value);
+            break;
+          case "TransactionAmount":
+            parsed.amount = Number(param.Value);
+            break;
+          case "TransCompletedTime":
+            parsed.completedTime = String(param.Value);
+            break;
+        }
+      });
+    }
+
+    return parsed;
+  }
+  /**
+   * Parse Reversal callback
+   */
+  parseReversalCallback(callback: ReversalCallback): {
+    isSuccess: boolean;
+    transactionId?: string;
+    errorMessage?: string;
+  } {
+    const result = callback.Result;
+    return {
+      isSuccess: result.ResultCode === 0,
+      transactionId: result.TransactionID,
+      errorMessage:
+        result.ResultCode !== 0
+          ? this.getErrorMessage(result.ResultCode)
+          : undefined,
+    };
   }
 
   /**

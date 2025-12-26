@@ -9,6 +9,26 @@ export type {
   C2BRegisterResponse,
   STKCallback,
   C2BCallback,
+  B2CCommandID,
+  B2CRequest,
+  B2CResponse,
+  B2CCallback,
+  B2BCommandID,
+  B2BRequest,
+  B2BResponse,
+  B2BCallback,
+  BalanceIdentifierType,
+  AccountBalanceRequest,
+  AccountBalanceResponse,
+  AccountBalanceCallback,
+  GeneralTransactionStatusRequest,
+  GeneralTransactionStatusResponse,
+  TransactionStatusCallback,
+  ReversalRequest,
+  ReversalResponse,
+  ReversalCallback,
+  DynamicQRRequest,
+  DynamicQRResponse,
 } from "./types/mpesa";
 export {
   MpesaCallbackHandler,
@@ -32,3 +52,7 @@ export {
   type RateLimiterOptions,
   type RedisLike,
 } from "./utils/ratelimiter";
+export {
+  encryptInitiatorPassword,
+  validateSecurityCredential,
+} from "./utils/security";

@@ -1,12 +1,10 @@
 import * as crypto from "crypto";
 import * as fs from "fs";
-
 /**
  * Encrypt initiator password with M-pesa public certificate
  * @param initiatorPassword - Plain text initiator password
  * @param certificatePath - Path to M-pesa public certificate (.cer file)
  */
-
 export function encryptInitiatorPassword(
   initiatorPassword: string,
   certificatePath: string,
