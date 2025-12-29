@@ -362,7 +362,7 @@ export class MpesaClient {
       );
     }
     const payload = {
-      InitiatorName: this.config.initiatorName,
+      Initiator: this.config.initiatorName,
       SecurityCredential: this.config.securityCredential,
       CommandID: request.commandID,
       Amount: Math.floor(request.amount),

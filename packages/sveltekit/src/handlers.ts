@@ -9,11 +9,12 @@ import {
   type TransactionStatusCallback,
   type ReversalCallback,
 } from "@singularity-payments/core";
-import { NextRequest, NextResponse } from "next/server";
+import type { RequestEvent } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
 import type { MpesaRouteHandlers } from "./types";
 
 /**
- * Create Next.js route handlers for M-Pesa callbacks and client-side API requests
+ * Create SvelteKit route handlers for M-Pesa callbacks and client-side API requests
  */
 export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
   const handlers = {
@@ -22,18 +23,18 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * Handles callbacks from M-Pesa after STK Push requests
      */
     stkCallback: {
-      POST: async (request: NextRequest) => {
+      POST: async (event: RequestEvent) => {
         try {
-          const body = (await request.json()) as STKCallback;
+          const body = (await event.request.json()) as STKCallback;
           const ipAddress =
-            request.headers.get("x-forwarded-for") ||
-            request.headers.get("x-real-ip") ||
+            event.request.headers.get("x-forwarded-for") ||
+            event.request.headers.get("x-real-ip") ||
             undefined;
           const response = await client.handleSTKCallback(body, ipAddress);
-          return NextResponse.json(response, { status: 200 });
+          return json(response, { status: 200 });
         } catch (error: any) {
           console.error("STK Callback error:", error);
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 1,
               ResultDesc: "Internal error processing callback",
@@ -49,14 +50,14 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * Validates C2B transactions before they are processed
      */
     c2bValidation: {
-      POST: async (request: NextRequest) => {
+      POST: async (event: RequestEvent) => {
         try {
-          const body = (await request.json()) as C2BCallback;
+          const body = (await event.request.json()) as C2BCallback;
           const response = await client.handleC2BValidation(body);
-          return NextResponse.json(response, { status: 200 });
+          return json(response, { status: 200 });
         } catch (error: any) {
           console.error("C2B Validation error:", error);
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 1,
               ResultDesc: "Validation failed",
@@ -72,14 +73,14 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * Confirms C2B transactions after they are processed
      */
     c2bConfirmation: {
-      POST: async (request: NextRequest) => {
+      POST: async (event: RequestEvent) => {
         try {
-          const body = (await request.json()) as C2BCallback;
+          const body = (await event.request.json()) as C2BCallback;
           const response = await client.handleC2BConfirmation(body);
-          return NextResponse.json(response, { status: 200 });
+          return json(response, { status: 200 });
         } catch (error: any) {
           console.error("C2B Confirmation error:", error);
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 1,
               ResultDesc: "Processing failed",
@@ -95,14 +96,14 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * Handles callbacks from M-Pesa after B2C requests
      */
     b2cResult: {
-      POST: async (request: NextRequest) => {
+      POST: async (event: RequestEvent) => {
         try {
-          const body = (await request.json()) as B2CCallback;
+          const body = (await event.request.json()) as B2CCallback;
           const parsed = client.getCallbackHandler().parseB2CCallback(body);
 
           console.log("B2C Result:", parsed);
 
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 0,
               ResultDesc: "Accepted",
@@ -111,7 +112,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
           );
         } catch (error: any) {
           console.error("B2C Result error:", error);
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 1,
               ResultDesc: "Processing failed",
@@ -127,12 +128,12 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * Handles timeout notifications from M-Pesa for B2C requests
      */
     b2cTimeout: {
-      POST: async (request: NextRequest) => {
+      POST: async (event: RequestEvent) => {
         try {
-          const body = await request.json();
+          const body = await event.request.json();
           console.log("B2C Timeout:", body);
 
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 0,
               ResultDesc: "Timeout received",
@@ -141,7 +142,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
           );
         } catch (error: any) {
           console.error("B2C Timeout error:", error);
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 1,
               ResultDesc: "Processing failed",
@@ -156,8 +157,9 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * Catch-all handler for all M-Pesa webhooks and client-side API requests
      * Routes based on URL path segment
      *
-     * Usage: app/api/mpesa/[...mpesa]/route.ts
-     * export const { POST } = mpesa.handlers.catchAll;
+     * Usage: src/routes/api/mpesa/[...path]/+server.ts
+     * import { mpesa } from "$lib/mpesa";
+     * export const POST = mpesa.handlers.catchAll.POST;
      *
      * Supported endpoints:
      *
@@ -176,7 +178,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * - /api/mpesa/status-result - Transaction status result
      * - /api/mpesa/status-timeout - Transaction status timeout
      *
-     * CLIENT APIs (from the frontend package, will recode react soon):
+     * CLIENT APIs (from your frontend):
      * - /api/mpesa/stk-push - Initiate STK Push request
      * - /api/mpesa/stk-query - Query STK Push status
      * - /api/mpesa/b2c - Initiate B2C payment
@@ -188,15 +190,15 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
      * - /api/mpesa/generate-qr - Generate dynamic QR code
      */
     catchAll: {
-      POST: async (request: NextRequest) => {
-        const pathname = request.nextUrl.pathname;
+      POST: async (event: RequestEvent) => {
+        const pathname = event.url.pathname;
         const segments = pathname.split("/").filter(Boolean);
         const lastSegment = segments[segments.length - 1];
 
         try {
           // STK Push callback from M-Pesa
           if (lastSegment === "callback" || lastSegment === "stk-callback") {
-            return handlers.stkCallback.POST(request);
+            return handlers.stkCallback.POST(event);
           }
 
           // C2B validation callback from M-Pesa
@@ -204,7 +206,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             lastSegment === "validation" ||
             lastSegment === "c2b-validation"
           ) {
-            return handlers.c2bValidation.POST(request);
+            return handlers.c2bValidation.POST(event);
           }
 
           // C2B confirmation callback from M-Pesa
@@ -212,30 +214,30 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             lastSegment === "confirmation" ||
             lastSegment === "c2b-confirmation"
           ) {
-            return handlers.c2bConfirmation.POST(request);
+            return handlers.c2bConfirmation.POST(event);
           }
 
           // B2C callbacks
           if (lastSegment === "b2c-result") {
-            return handlers.b2cResult.POST(request);
+            return handlers.b2cResult.POST(event);
           }
 
           if (lastSegment === "b2c-timeout") {
-            return handlers.b2cTimeout.POST(request);
+            return handlers.b2cTimeout.POST(event);
           }
 
           // B2B callbacks
           if (lastSegment === "b2b-result") {
-            const body = (await request.json()) as B2BCallback;
+            const body = (await event.request.json()) as B2BCallback;
             const parsed = client.getCallbackHandler().parseB2BCallback(body);
             console.log("B2B Result:", parsed);
-            return NextResponse.json({ ResultCode: 0, ResultDesc: "Accepted" });
+            return json({ ResultCode: 0, ResultDesc: "Accepted" });
           }
 
           if (lastSegment === "b2b-timeout") {
-            const body = await request.json();
+            const body = await event.request.json();
             console.log("B2B Timeout:", body);
-            return NextResponse.json({
+            return json({
               ResultCode: 0,
               ResultDesc: "Timeout received",
             });
@@ -243,18 +245,18 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
 
           // Account balance callbacks
           if (lastSegment === "balance-result") {
-            const body = (await request.json()) as AccountBalanceCallback;
+            const body = (await event.request.json()) as AccountBalanceCallback;
             const parsed = client
               .getCallbackHandler()
               .parseAccountBalanceCallback(body);
             console.log("Balance Result:", parsed);
-            return NextResponse.json({ ResultCode: 0, ResultDesc: "Accepted" });
+            return json({ ResultCode: 0, ResultDesc: "Accepted" });
           }
 
           if (lastSegment === "balance-timeout") {
-            const body = await request.json();
+            const body = await event.request.json();
             console.log("Balance Timeout:", body);
-            return NextResponse.json({
+            return json({
               ResultCode: 0,
               ResultDesc: "Timeout received",
             });
@@ -262,18 +264,19 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
 
           // Transaction status callbacks
           if (lastSegment === "status-result") {
-            const body = (await request.json()) as TransactionStatusCallback;
+            const body =
+              (await event.request.json()) as TransactionStatusCallback;
             const parsed = client
               .getCallbackHandler()
               .parseTransactionStatusCallback(body);
             console.log("Status Result:", parsed);
-            return NextResponse.json({ ResultCode: 0, ResultDesc: "Accepted" });
+            return json({ ResultCode: 0, ResultDesc: "Accepted" });
           }
 
           if (lastSegment === "status-timeout") {
-            const body = await request.json();
+            const body = await event.request.json();
             console.log("Status Timeout:", body);
-            return NextResponse.json({
+            return json({
               ResultCode: 0,
               ResultDesc: "Timeout received",
             });
@@ -281,28 +284,28 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
 
           // Reversal callbacks
           if (lastSegment === "reversal-result") {
-            const body = (await request.json()) as ReversalCallback;
+            const body = (await event.request.json()) as ReversalCallback;
             const parsed = client
               .getCallbackHandler()
               .parseReversalCallback(body);
             console.log("Reversal Result:", parsed);
-            return NextResponse.json({ ResultCode: 0, ResultDesc: "Accepted" });
+            return json({ ResultCode: 0, ResultDesc: "Accepted" });
           }
 
           if (lastSegment === "reversal-timeout") {
-            const body = await request.json();
+            const body = await event.request.json();
             console.log("Reversal Timeout:", body);
-            return NextResponse.json({
+            return json({
               ResultCode: 0,
               ResultDesc: "Timeout received",
             });
           }
 
-          //CLIENT API HANDLERS (FROM THE FRONTEND PACKAGE)
+          // CLIENT API HANDLERS (FROM THE FRONTEND)
 
           // Initiate STK Push request to M-Pesa
           if (lastSegment === "stk-push") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               amount?: number;
               phoneNumber?: string;
               accountReference?: string;
@@ -320,7 +323,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
 
             // Validate required fields
             if (!amount || !phoneNumber) {
-              return NextResponse.json(
+              return json(
                 { error: "Amount and phone number are required" },
                 { status: 400 },
               );
@@ -335,19 +338,19 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               callbackUrl,
             });
 
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // Query STK Push transaction status
           if (lastSegment === "stk-query") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               CheckoutRequestID?: string;
             };
             const { CheckoutRequestID } = body;
 
             // Validate required field
             if (!CheckoutRequestID) {
-              return NextResponse.json(
+              return json(
                 { error: "CheckoutRequestID is required" },
                 { status: 400 },
               );
@@ -355,12 +358,12 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
 
             // Call M-Pesa STK Query API
             const response = await client.stkQuery({ CheckoutRequestID });
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // B2C - Business to Customer payment
           if (lastSegment === "b2c") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               amount?: number;
               phoneNumber?: string;
               commandID?: string;
@@ -381,7 +384,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             } = body;
 
             if (!amount || !phoneNumber || !commandID) {
-              return NextResponse.json(
+              return json(
                 { error: "Amount, phone number, and command ID are required" },
                 { status: 400 },
               );
@@ -397,12 +400,12 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               timeoutUrl,
             });
 
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // B2B - Business to Business payment
           if (lastSegment === "b2b") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               amount?: number;
               partyB?: string;
               commandID?: string;
@@ -436,7 +439,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             });
 
             if (!amount || !partyB || !commandID || !accountReference) {
-              return NextResponse.json(
+              return json(
                 {
                   error:
                     "Amount, partyB, commandID, and account reference are required",
@@ -458,12 +461,12 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             });
             console.log("B2B Response:", response);
 
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // Query account balance
           if (lastSegment === "balance") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               partyA?: string;
               identifierType?: string;
               remarks?: string;
@@ -474,12 +477,12 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             const response = await client.accountBalance(
               body as AccountBalanceRequest,
             );
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // Query transaction status
           if (lastSegment === "transaction-status") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               transactionID?: string;
               partyA?: string;
               identifierType?: string;
@@ -492,19 +495,19 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             const { transactionID } = body;
 
             if (!transactionID) {
-              return NextResponse.json(
+              return json(
                 { error: "Transaction ID is required" },
                 { status: 400 },
               );
             }
 
             const response = await client.transactionStatus(body as any);
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // Reverse a transaction
           if (lastSegment === "reversal") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               transactionID?: string;
               amount?: number;
               receiverParty?: string;
@@ -518,19 +521,19 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
             const { transactionID, amount } = body;
 
             if (!transactionID || !amount) {
-              return NextResponse.json(
+              return json(
                 { error: "Transaction ID and amount are required" },
                 { status: 400 },
               );
             }
 
             const response = await client.reversal(body as any);
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // Register C2B URLs
           if (lastSegment === "register-c2b") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               shortCode?: string;
               responseType?: string;
               confirmationURL?: string;
@@ -541,7 +544,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               body;
 
             if (!confirmationURL || !validationURL) {
-              return NextResponse.json(
+              return json(
                 { error: "Confirmation URL and validation URL are required" },
                 { status: 400 },
               );
@@ -554,12 +557,12 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               validationURL,
             });
 
-            return NextResponse.json(response);
+            return json(response);
           }
 
           // Generate dynamic QR code
           if (lastSegment === "generate-qr") {
-            const body = (await request.json()) as {
+            const body = (await event.request.json()) as {
               merchantName?: string;
               refNo?: string;
               amount?: number;
@@ -585,7 +588,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               !transactionType ||
               !creditPartyIdentifier
             ) {
-              return NextResponse.json(
+              return json(
                 {
                   error:
                     "Merchant name, reference number, amount, transaction type, and credit party identifier are required",
@@ -595,11 +598,11 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               );
             }
 
-            // Make sure the size is the valid ones
+            // Make sure the size is valid
             let qrSize: "300" | "500" | undefined = undefined;
             if (size) {
               if (size !== "500" && size !== "300") {
-                return NextResponse.json(
+                return json(
                   {
                     error: "Size must be either '300' or '500'",
                   },
@@ -618,10 +621,10 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               size: qrSize,
             });
 
-            return NextResponse.json(response);
+            return json(response);
           }
 
-          return NextResponse.json(
+          return json(
             {
               ResultCode: 1,
               ResultDesc: `Unknown endpoint: ${lastSegment}`,
@@ -630,7 +633,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
           );
         } catch (error: any) {
           console.error(`M-Pesa ${lastSegment} error:`, error);
-          return NextResponse.json(
+          return json(
             { error: error.message || "Request failed" },
             { status: 500 },
           );
