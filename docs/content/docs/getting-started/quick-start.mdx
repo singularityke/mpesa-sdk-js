@@ -322,10 +322,14 @@ Create a `.env.local` file in your project root:
 ```bash title=".env.local"
 MPESA_CONSUMER_KEY=your_consumer_key
 MPESA_CONSUMER_SECRET=your_consumer_secret
-MPESA_SHORTCODE=your_shortcode
+MPESA_SHORTCODE=174379 #For STK Push Testing in Sandbox(Replace with your shortcode in production)
 MPESA_PASSKEY=your_passkey
-MPESA_ENVIRONMENT=sandbox
-NEXT_PUBLIC_APP_URL=https://your-ngrok-url.ngrok-free.app
+MPESA_ENVIRONMENT=sandbox # or 'production'
+APP_URL=https://your-app-url.com
+# For STK Push you can just include the 6 above
+# Required for B2C, B2B, Reversal, Transaction Status, and Account Balance
+MPESA_INITIATOR_NAME=testapi #Initiator Name for Sandbox
+MPESA_SECURITY_CREDENTIAL=your_security_credential
 ```
 
 <Callout type="warn">

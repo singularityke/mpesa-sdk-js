@@ -1,0 +1,139 @@
+---
+title: Next.js
+description: Singularity payments can be integrated into your Next.js application with ease.
+---
+
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+## Install the packages
+
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+  <Tab value="npm">
+```bash
+npm install @singularity-payments/nextjs @singularity-payments/react
+```
+
+  </Tab>
+  <Tab value="pnpm">
+```bash
+pnpm add @singularity-payments/nextjs @singularity-payments/react
+```
+
+  </Tab>
+  <Tab value="yarn">
+```bash
+yarn add @singularity-payments/nextjs @singularity-payments/react
+```
+
+  </Tab>
+  <Tab value="bun">
+```bash
+bun add @singularity-payments/nextjs @singularity-payments/react
+```
+
+  </Tab>
+</Tabs>
+<Card
+  title="Guide on Obtaining M-pesa Credentials"
+  description="Learn how to obtain M-pesa credentials for your application."
+  href="/docs/daraja/quick-start"
+/>
+
+## Configure your environmental variables
+
+```bash title=".env.local"
+MPESA_CONSUMER_KEY=your_consumer_key
+MPESA_CONSUMER_SECRET=your_consumer_secret
+MPESA_SHORTCODE=174379 #For STK Push Testing in Sandbox(Replace with your shortcode in production)
+MPESA_PASSKEY=your_passkey
+MPESA_ENVIRONMENT=sandbox # or 'production'
+NEXT_PUBLIC_APP_URL=https://your-app-url.com
+# For STK Push you can just include the 6 above
+# Required for B2C, B2B, Reversal, Transaction Status, and Account Balance
+MPESA_INITIATOR_NAME=testapi #Initiator Name for Sandbox
+MPESA_SECURITY_CREDENTIAL=your_security_credential
+MPESA_RESULT_URL=https://your-app-url.com/api/mpesa/result
+MPESA_CALLBACK_URL=https://your-app-url.com/api/mpesa/callback
+```
+
+## Understanding Shortcodes
+
+Your **shortcode** is your business number in the M-Pesa system, it's what customers see when making payments.
+
+### Sandbox (Testing)
+
+Use M-Pesa's provided test shortcodes:
+
+- `174379` - For STK Push testing
+- `600984` - For Till Number testing
+- `600000` - For Paybill testing
+
+These are pre-configured and ready to use immediately.
+
+### Production (Live)
+
+You'll need to apply for your own shortcode through Safaricom's M-Pesa portal:
+
+1. Submit business registration documents
+2. Complete KYC verification
+3. Wait for approval (can take several days)
+4. Receive your unique 5-7 digit shortcode
+
+**Important:** Never mix sandbox and production credentials. Always use the matching shortcode for your environment.
+
+```bash
+# Sandbox
+MPESA_SHORTCODE=174379
+
+# Production
+MPESA_SHORTCODE=123456 # Your approved business number
+```
+
+## Configure the Mpesa SDK on the Server
+
+```typescript title="lib/mpesa.ts"
+import { createMpesa } from "@singularity-payments/nextjs";
+
+export const mpesa = createMpesa(
+  {
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    passkey: process.env.MPESA_PASSKEY!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    environment:
+      (process.env.MPESA_ENVIRONMENT as "sandbox" | "production") || "sandbox",
+    callbackUrl: process.env.MPESA_CALLBACK_URL!,
+    // Required for B2C, B2B, Reversal, Transaction Status, and Account Balance
+    initiatorName: "testapi",
+    securityCredential: process.env.MPESA_SECURITY_CREDENTIAL!,
+    resultUrl: process.env.MPESA_RESULT_URL!,
+    timeoutUrl: process.env.MPESA_TIMEOUT_URL!,
+  },
+  {
+    callbackOptions: {
+      onSuccess: async (data) => {
+        console.log("Payment successful:", {
+          amount: data.amount,
+          phone: data.phoneNumber,
+          receipt: data.mpesaReceiptNumber,
+          transactionDate: data.transactionDate,
+        });
+
+        // TODO: Save to database
+        // await db.transaction.update({
+        //   where: { CheckoutRequestID: data.CheckoutRequestID },
+        //   data: { status: 'completed', mpesaReceiptNumber: data.mpesaReceiptNumber }
+        // });
+      },
+      onFailure: async (data) => {
+        console.log(" Payment failed:", {
+          resultCode: data.resultCode,
+          resultDesc: data.resultDescription,
+        });
+
+        // TODO: Update database
+      },
+    },
+  },
+);
+```
