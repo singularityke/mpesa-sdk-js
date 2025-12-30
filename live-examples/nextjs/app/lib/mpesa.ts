@@ -11,7 +11,6 @@ export const mpesa = createMpesa(
     callbackUrl: process.env.MPESA_CALLBACK_URL!,
 
     // Required for B2C, B2B, Reversal, Transaction Status, and Account Balance
-
     initiatorName: process.env.MPESA_INITIATOR_NAME!,
     securityCredential: process.env.MPESA_SECURITY_CREDENTIAL!,
     resultUrl: process.env.MPESA_RESULT_URL!,

@@ -329,11 +329,11 @@ importers:
   live-examples/nextjs:
     dependencies:
       '@singularity-payments/nextjs':
-        specifier: 0.1.0-alpha.2
-        version: 0.1.0-alpha.2(next@16.1.1(@babel/core@7.28.5)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
+        specifier: 0.1.0-alpha.4
+        version: 0.1.0-alpha.4(next@16.1.1(@babel/core@7.28.5)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
       '@singularity-payments/react':
-        specifier: 0.1.0-alpha.0
-        version: 0.1.0-alpha.0(react@19.2.3)
+        specifier: 0.1.0-alpha.2
+        version: 0.1.0-alpha.2(react@19.2.3)
       next:
         specifier: 16.1.1
         version: 16.1.1(@babel/core@7.28.5)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -2784,16 +2784,16 @@ packages:
     resolution: {integrity: sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ==}
     engines: {node: '>=18'}
 
-  '@singularity-payments/core@0.1.0-alpha.0':
-    resolution: {integrity: sha512-55RTVR7TJ8FvX3xpoTUGX6K5X5uF5jJh8VjbCWPIBEaPcVX0EQyOWeaj7a4aEu0NPSJi/J3XCjTSexw7pHFh8Q==}
+  '@singularity-payments/core@0.1.0-alpha.1':
+    resolution: {integrity: sha512-i8Wa2v/vOsI9ZW9E0SN1bilP831BnbvNUr7nwPYMQ22za5/+9LEOqofea1WoTRIhUiqZNT9udO2si00Gk9B81A==}
 
-  '@singularity-payments/nextjs@0.1.0-alpha.2':
-    resolution: {integrity: sha512-TtUi7QQYhG7El8m/XTp03RjJsKl+66etc1N7F91ysQTejbfTuNeGTAVMDdcZB2+B4S80QUISIDwQ7hdVyrCQOw==}
+  '@singularity-payments/nextjs@0.1.0-alpha.4':
+    resolution: {integrity: sha512-3PEEpNUaWXRUOn1h42l/IqrzEYvePVOC8luT6dO7hRtK6PiUnAWxVFqhe38L/O9ohhCiSLMkw0hQGFaQ8rDbHw==}
     peerDependencies:
       next: '>=13.0.0'
 
-  '@singularity-payments/react@0.1.0-alpha.0':
-    resolution: {integrity: sha512-wWzYh32Vo6sevseSPs3Lo6g4uZRdZXAZSecrZdCVZRbPdBiydcbMxbFcUlJLy/Ui8uuNY7b7f1QDnSvK1eDzrg==}
+  '@singularity-payments/react@0.1.0-alpha.2':
+    resolution: {integrity: sha512-P1pk7OtPgmDU1f+T62PfjKi7c0wm7os18YP1tUhVCQ0o9xlhdXcJWbWfjZqiHgzO4kdpOfS6kxrnTTasFf1ZDg==}
     peerDependencies:
       react: '>=18.0.0'
 
@@ -10110,16 +10110,16 @@ snapshots:
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
-  '@singularity-payments/core@0.1.0-alpha.0': {}
+  '@singularity-payments/core@0.1.0-alpha.1': {}
 
-  '@singularity-payments/nextjs@0.1.0-alpha.2(next@16.1.1(@babel/core@7.28.5)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))':
+  '@singularity-payments/nextjs@0.1.0-alpha.4(next@16.1.1(@babel/core@7.28.5)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))':
     dependencies:
-      '@singularity-payments/core': 0.1.0-alpha.0
+      '@singularity-payments/core': 0.1.0-alpha.1
       next: 16.1.1(@babel/core@7.28.5)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
 
-  '@singularity-payments/react@0.1.0-alpha.0(react@19.2.3)':
+  '@singularity-payments/react@0.1.0-alpha.2(react@19.2.3)':
     dependencies:
-      '@singularity-payments/core': 0.1.0-alpha.0
+      '@singularity-payments/core': 0.1.0-alpha.1
       react: 19.2.3
 
   '@speed-highlight/core@1.2.12': {}

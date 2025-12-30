@@ -103,6 +103,7 @@ export const mpesa = createMpesa(
     environment:
       (process.env.MPESA_ENVIRONMENT as "sandbox" | "production") || "sandbox",
     callbackUrl: process.env.MPESA_CALLBACK_URL!,
+
     // Required for B2C, B2B, Reversal, Transaction Status, and Account Balance
     initiatorName: "testapi",
     securityCredential: process.env.MPESA_SECURITY_CREDENTIAL!,
@@ -136,4 +137,20 @@ export const mpesa = createMpesa(
     },
   },
 );
+```
+
+## Configure the Mpesa SDK on the Client
+
+```typescript title="lib/mpesa-client.ts"
+import { createMpesaClient } from "@singularity-payments/react";
+
+export const mpesaClient = createMpesaClient({
+  baseUrl: "", //If they are running on different ports you can include eg("http://localhost:3000").
+});
+```
+
+## Use the Mpesa SDK on the Client
+
+```
+
 ```
