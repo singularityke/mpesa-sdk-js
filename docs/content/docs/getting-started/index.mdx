@@ -19,7 +19,6 @@ While the [Daraja API](https://developer.safaricom.co.ke/APIs) is powerful, inte
 Built with TypeScript, you will get full IntelliSense support and catch errors before they reach production. No more guessing API parameters or dealing with cryptic runtime errors.
 
 ```typescript
-//  Type-safe - your IDE will guide you
 const { data, error } = await mpesaClient.stkPush({
   amount: 1,
   phoneNumber: phone,
@@ -27,10 +26,9 @@ const { data, error } = await mpesaClient.stkPush({
   transactionDesc: "Sponsorship",
 });
 
-//  TypeScript catches mistakes instantly
 const { data, error } = await mpesaClient.stkPush({
-  amount: "1", // Error: amount must be a number
-  phone: "254712345678", // Error: unknown property 'phone'
+  amount: "1",
+  phone: "254712345678",
 });
 ```
 
@@ -39,21 +37,85 @@ const { data, error } = await mpesaClient.stkPush({
 No need to manually handle OAuth tokens, token refresh, or authentication flows. The SDK manages all of this automatically.
 
 ```typescript
-// With Singularity Payments - authentication handled automatically
 const mpesaClient = new MpesaClient({
   consumerKey: process.env.MPESA_KEY,
   consumerSecret: process.env.MPESA_SECRET,
 });
 
-await mpesaClient.stkPush({
-  /* ... */
-}); // Just works!
-
-// Without SDK - manual token management required
-const token = await getOAuthToken();
-const headers = { Authorization: `Bearer ${token}` };
-// Handle token expiry, refresh logic, etc.
+await mpesaClient.stkPush({});
 ```
+
+## **Built-in Rate Limiting for Distributed Systems**
+
+Protect your M-Pesa integration from API rate limits with built-in rate limiting that works seamlessly across multiple servers and serverless functions using Redis. Perfect for production applications running on platforms like Vercel, AWS Lambda, or Kubernetes clusters.
+
+```typescript
+import { createClient } from "redis";
+import { createMpesa } from "@singularity-payments/nextjs";
+
+const redisClient = createClient({
+  url: process.env.REDIS_URL,
+});
+
+await redisClient.connect();
+
+export const mpesa = createMpesa(
+  {
+    consumerKey: process.env.MPESA_CONSUMER_KEY,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET,
+    passkey: process.env.MPESA_PASSKEY,
+    shortcode: process.env.MPESA_SHORTCODE,
+    environment: "sandbox",
+  },
+  {
+    rateLimitOptions: {
+      enabled: true,
+      maxRequests: 100,
+      windowMs: 60000,
+      redis: redisClient,
+    },
+  },
+);
+```
+
+### Why Redis Rate Limiting Matters
+
+**Without Redis (In-Memory Only)**
+
+- Rate limits reset when your server restarts
+- Each server instance has separate limits
+- Serverless functions can't share rate limit state
+- Risk of exceeding M-Pesa API limits in distributed deployments
+
+**With Redis Rate Limiting**
+
+- Shared rate limit state across all servers
+- Survives server restarts and redeployments
+- Works perfectly with serverless architectures
+- Automatic synchronization across multiple regions
+- Prevents API limit violations in high-traffic scenarios
+
+### Distributed System Support
+
+Whether you're running a single server or a globally distributed application, Redis-based rate limiting ensures consistent API usage tracking:
+
+- **Serverless Functions**: Share rate limits across Lambda, Vercel Edge, or Cloudflare Workers
+- **Kubernetes Clusters**: Coordinate limits across multiple pods and nodes
+- **Multi-Region Deployments**: Synchronize limits globally with Redis replication
+- **Auto-Scaling**: New instances immediately respect existing rate limits
+
+### Flexible Configuration
+
+```typescript
+rateLimitOptions: {
+  enabled: true,
+  maxRequests: 100,
+  windowMs: 60000,
+  redis: redisClient,
+}
+```
+
+Configure rate limits based on your M-Pesa plan and traffic patterns. The SDK automatically tracks requests per endpoint and enforces limits before making API calls, preventing costly rate limit errors.
 
 ## **Intuitive API Design**
 
@@ -135,13 +197,15 @@ Works seamlessly with any JavaScript framework or library:
 
 ## Comparison
 
-| Feature             | Singularity Payments     | Raw Daraja API             |
-| ------------------- | ------------------------ | -------------------------- |
-| TypeScript Support  | ✅ Full type safety      | ❌ Manual typing           |
-| Auto Authentication | ✅ Handled automatically | ❌ Manual token management |
-| Error Handling      | ✅ Descriptive errors    | ❌ Raw API errors          |
-| Documentation       | ✅ Comprehensive         | ⚠️ Basic                   |
-| Framework Support   | ✅ All frameworks        | ✅ All frameworks          |
+| Feature                   | Singularity Payments     | Raw Daraja API             |
+| ------------------------- | ------------------------ | -------------------------- |
+| TypeScript Support        | ✅ Full type safety      | ❌ Manual typing           |
+| Auto Authentication       | ✅ Handled automatically | ❌ Manual token management |
+| Distributed Rate Limiting | ✅ Redis-based           | ❌ Manual implementation   |
+| Error Handling            | ✅ Descriptive errors    | ❌ Raw API errors          |
+| Documentation             | ✅ Comprehensive         | ⚠️ Basic                   |
+| Framework Support         | ✅ All frameworks        | ✅ All frameworks          |
+| Serverless Compatible     | ✅ Full support          | ⚠️ Requires custom setup   |
 
 ## What You Can Build
 

@@ -1,0 +1,903 @@
+---
+title: Transaction Status
+description: Query the status of any M-Pesa transaction using Transaction ID
+---
+
+## Overview
+
+Transaction Status allows you to query the current status of any M-Pesa transaction using its Transaction ID. This is useful for verifying B2C, B2B, reversals, or any other M-Pesa transaction that didn't complete as expected or when you need to confirm transaction details.
+
+## Where to Get the Transaction ID
+
+The Transaction ID comes from the **callback** of the original transaction, NOT from the initial response. Here's how:
+
+### From B2C Callback
+
+```typescript
+callbackOptions: {
+  onB2CResult: async (data) => {
+    if (data.isSuccess) {
+      const transactionId = data.transactionId;
+
+      await db.b2cTransactions.update({
+        where: { conversationId: data.conversationId },
+        data: {
+          mpesaTransactionId: transactionId,
+          status: "completed",
+        },
+      });
+    }
+  },
+}
+```
+
+### From B2B Callback
+
+```typescript
+callbackOptions: {
+  onB2BResult: async (data) => {
+    if (data.isSuccess) {
+      const transactionId = data.transactionId;
+
+      await db.b2bTransactions.update({
+        where: { conversationId: data.conversationId },
+        data: {
+          mpesaTransactionId: transactionId,
+          status: "completed",
+        },
+      });
+    }
+  },
+}
+```
+
+### Important Notes
+
+- The initial response ConversationID is NOT the transaction ID
+- Transaction ID is only available after M-Pesa processes the payment
+- Always store the transaction ID from the callback for future queries
+- If you don't have the transaction ID, you cannot use this API
+
+## How It Works
+
+1. **Initiate Query**: Your application sends a transaction status request with the Transaction ID
+2. **M-Pesa Processes**: M-Pesa looks up the transaction in their system
+3. **Receive Callback**: M-Pesa sends the transaction details to your result URL
+4. **Process Result**: Your application processes the transaction information
+
+## Use Cases
+
+- Verify if a B2C payment was successful when callback wasn't received
+- Check the status of a B2B transfer
+- Confirm reversal completion
+- Investigate failed transactions
+- Audit and reconciliation purposes
+- Customer support inquiries
+
+## Basic Usage
+
+### Server-Side
+
+```typescript
+const response = await mpesa.client.transactionStatus({
+  transactionID: "PGK1234567",
+  remarks: "Checking transaction status",
+});
+```
+
+### Client-Side
+
+```typescript
+const response = await mpesaClient.transactionStatus({
+  transactionID: "PGK1234567",
+  remarks: "Checking transaction status",
+});
+```
+
+The Response will look like this if successful:
+
+```json
+{
+  "ConversationID": "AG_20251231_00004e9b3e3e3e3e3e3e",
+  "OriginatorConversationID": "9e2d-4d13-b15f-cbf9a0b7e00f10096",
+  "ResponseCode": "0",
+  "ResponseDescription": "Accept the service request successfully."
+}
+```
+
+## Real-World Example
+
+In a real application, you might want to check transaction status when callbacks are delayed or missing:
+
+```typescript
+import { db } from "./db";
+import { transactions, statusChecks } from "./schema";
+import { eq } from "drizzle-orm";
+import { mpesa } from "@/lib/mpesa";
+
+interface StatusCheckRequest {
+  transactionId: string;
+  reason: string;
+}
+
+async function checkTransactionStatus(request: StatusCheckRequest) {
+  const { transactionId, reason } = request;
+
+  try {
+    const existingTransaction = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.mpesaTransactionId, transactionId))
+      .limit(1);
+
+    if (existingTransaction.length === 0) {
+      throw new Error("Transaction not found in local database");
+    }
+
+    const response = await mpesa.client.transactionStatus({
+      transactionID: transactionId,
+      remarks: reason || "Status verification",
+      occasion: "Transaction audit",
+    });
+
+    await db.insert(statusChecks).values({
+      conversationId: response.ConversationID,
+      originatorConversationId: response.OriginatorConversationID,
+      transactionId: transactionId,
+      localTransactionId: existingTransaction[0].id,
+      reason: reason,
+      status: "pending",
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      conversationId: response.ConversationID,
+      message: response.ResponseDescription,
+    };
+  } catch (error) {
+    console.error("Status check failed:", error);
+    throw error;
+  }
+}
+```
+
+### Complete Flow: From B2C Payment to Status Check
+
+Here's the complete flow showing where the transaction ID comes from:
+
+```typescript
+async function processB2CPayment(amount: number, phoneNumber: string) {
+  const response = await mpesa.client.b2c({
+    amount,
+    phoneNumber,
+    commandID: "BusinessPayment",
+    remarks: "Payment to customer",
+  });
+
+  await db.b2cTransactions.create({
+    data: {
+      conversationId: response.ConversationID,
+      status: "pending",
+      amount,
+      phoneNumber,
+    },
+  });
+}
+
+callbackOptions = {
+  onB2CResult: async (data) => {
+    if (data.isSuccess) {
+      await db.b2cTransactions.update({
+        where: { conversationId: data.conversationId },
+        data: {
+          mpesaTransactionId: data.transactionId,
+          status: "completed",
+        },
+      });
+    }
+  },
+};
+
+async function checkIfPaymentWentThrough(conversationId: string) {
+  const transaction = await db.b2cTransactions.findUnique({
+    where: { conversationId },
+  });
+
+  if (!transaction.mpesaTransactionId) {
+    throw new Error("Transaction ID not yet available. Wait for callback.");
+  }
+
+  return await mpesa.client.transactionStatus({
+    transactionID: transaction.mpesaTransactionId,
+    remarks: "Verifying payment status",
+  });
+}
+```
+
+### Automated Status Check for Stuck Transactions
+
+```typescript
+async function checkStuckTransactions() {
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+  const stuckTransactions = await db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "pending"),
+        lt(transactions.createdAt, fiveMinutesAgo),
+      ),
+    );
+
+  for (const transaction of stuckTransactions) {
+    try {
+      await mpesa.client.transactionStatus({
+        transactionID: transaction.mpesaTransactionId,
+        remarks: "Automated status check for stuck transaction",
+      });
+
+      await db
+        .update(transactions)
+        .set({
+          statusCheckAttempts: transaction.statusCheckAttempts + 1,
+          lastStatusCheck: new Date(),
+        })
+        .where(eq(transactions.id, transaction.id));
+    } catch (error) {
+      console.error(
+        `Failed to check status for transaction ${transaction.id}:`,
+        error,
+      );
+    }
+  }
+}
+```
+
+### Handling Transaction Status Callbacks
+
+```typescript
+callbackOptions = {
+  onTransactionStatus: async (data) => {
+    if (data.isSuccess) {
+      console.log("Transaction Status Retrieved:", {
+        receiptNo: data.receiptNo,
+        amount: data.amount,
+        completedTime: data.completedTime,
+        originatorConversationId: data.originatorConversationId,
+      });
+
+      await db
+        .update(statusChecks)
+        .set({
+          status: "completed",
+          receiptNo: data.receiptNo,
+          amount: data.amount,
+          completedTime: data.completedTime,
+          updatedAt: new Date(),
+        })
+        .where(
+          eq(
+            statusChecks.originatorConversationId,
+            data.originatorConversationId,
+          ),
+        );
+
+      const statusCheck = await db
+        .select()
+        .from(statusChecks)
+        .where(
+          eq(
+            statusChecks.originatorConversationId,
+            data.originatorConversationId,
+          ),
+        )
+        .limit(1);
+
+      if (statusCheck.length > 0) {
+        await db
+          .update(transactions)
+          .set({
+            status: "completed",
+            mpesaReceiptNumber: data.receiptNo,
+            actualAmount: data.amount,
+            completedAt: new Date(data.completedTime),
+            updatedAt: new Date(),
+          })
+          .where(eq(transactions.id, statusCheck[0].localTransactionId));
+      }
+    } else {
+      console.log("Transaction Status Query Failed:", {
+        errorMessage: data.errorMessage,
+      });
+
+      await db
+        .update(statusChecks)
+        .set({
+          status: "failed",
+          errorMessage: data.errorMessage,
+          updatedAt: new Date(),
+        })
+        .where(
+          eq(
+            statusChecks.originatorConversationId,
+            data.originatorConversationId,
+          ),
+        );
+    }
+  },
+};
+```
+
+## API Reference
+
+### Transaction Status Request
+
+```typescript
+interface GeneralTransactionStatusRequest {
+  transactionID: string;
+  partyA?: string;
+  identifierType?: "1" | "2" | "4";
+  remarks?: string;
+  occasion?: string;
+  resultUrl?: string;
+  timeoutUrl?: string;
+}
+```
+
+#### Parameters
+
+| Parameter        | Type   | Required | Description                                                                           |
+| ---------------- | ------ | -------- | ------------------------------------------------------------------------------------- |
+| `transactionID`  | string | Yes      | M-Pesa transaction ID to query (e.g., PGK1234567)                                     |
+| `partyA`         | string | No       | Organization receiving the transaction. Defaults to your shortcode                    |
+| `identifierType` | string | No       | Type of organization: `1` (MSISDN), `2` (Till Number), `4` (Paybill). Defaults to `4` |
+| `remarks`        | string | No       | Comments about the query. Defaults to "Transaction status query"                      |
+| `occasion`       | string | No       | Optional additional information                                                       |
+| `resultUrl`      | string | No       | Override the default result callback URL                                              |
+| `timeoutUrl`     | string | No       | Override the default timeout callback URL                                             |
+
+#### Identifier Types
+
+| Code | Description | When to Use                              |
+| ---- | ----------- | ---------------------------------------- |
+| `1`  | MSISDN      | Querying transactions for a phone number |
+| `2`  | Till Number | Querying Buy Goods transactions          |
+| `4`  | Paybill     | Querying Paybill transactions (default)  |
+
+### Transaction Status Response
+
+```typescript
+interface GeneralTransactionStatusResponse {
+  ConversationID: string;
+  OriginatorConversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
+}
+```
+
+#### Response Codes
+
+| Code           | Description               | Action                                     |
+| -------------- | ------------------------- | ------------------------------------------ |
+| `0`            | Success. Request accepted | Wait for callback with transaction details |
+| `1`            | Rejected                  | Check error message and retry              |
+| `500.001.1001` | Invalid credentials       | Verify initiator name/security credential  |
+| `400.008.02`   | Invalid transaction ID    | Verify the transaction ID is correct       |
+
+## Handling Callbacks
+
+The default configuration already handles callbacks using a catch-all route.
+
+<Card title="Callback Configuration" href="/integrations">
+  Default configuration already handles Transaction Status callbacks
+</Card>
+
+### Process Callbacks in Your Application
+
+```typescript
+import { MpesaClient } from "@singularity-payments/nextjs";
+
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    callbackOptions: {
+      onTransactionStatus: async (data) => {
+        if (data.isSuccess) {
+          console.log("Transaction found:", {
+            receiptNo: data.receiptNo,
+            amount: data.amount,
+            completedTime: data.completedTime,
+            originatorConversationId: data.originatorConversationId,
+          });
+
+          await db.transactionStatusQueries.update({
+            where: { originatorConversationId: data.originatorConversationId },
+            data: {
+              status: "completed",
+              receiptNo: data.receiptNo,
+              amount: data.amount,
+              completedTime: new Date(data.completedTime),
+            },
+          });
+
+          const originalTransaction = await db.transactions.findFirst({
+            where: { mpesaTransactionId: data.receiptNo },
+          });
+
+          if (originalTransaction) {
+            await db.transactions.update({
+              where: { id: originalTransaction.id },
+              data: {
+                status: "completed",
+                verifiedAt: new Date(),
+              },
+            });
+          }
+        } else {
+          console.log("Transaction not found or error:", {
+            errorMessage: data.errorMessage,
+          });
+
+          await db.transactionStatusQueries.update({
+            where: { originatorConversationId: data.originatorConversationId },
+            data: {
+              status: "failed",
+              errorMessage: data.errorMessage,
+            },
+          });
+        }
+      },
+
+      validateIp: true,
+    },
+  },
+);
+```
+
+### Callback Data Structure
+
+```typescript
+interface TransactionStatusCallbackData {
+  isSuccess: boolean;
+  receiptNo?: string;
+  amount?: number;
+  completedTime?: string;
+  originatorConversationId?: string;
+  errorMessage?: string;
+}
+```
+
+## Best Practices
+
+### 1. Store Status Query Metadata
+
+Always track your status queries to avoid redundant checks:
+
+```typescript
+const response = await mpesa.transactionStatus({
+  /* ... */
+});
+
+await db.statusQuery.create({
+  data: {
+    conversationId: response.ConversationID,
+    originatorConversationId: response.OriginatorConversationID,
+    transactionId: transactionID,
+    status: "PENDING",
+    queriedAt: new Date(),
+  },
+});
+```
+
+### 2. Implement Query Rate Limiting
+
+Don't query the same transaction too frequently:
+
+```typescript
+async function canQueryTransaction(transactionId: string): Promise<boolean> {
+  const recentQuery = await db.statusQuery.findFirst({
+    where: {
+      transactionId,
+      queriedAt: {
+        gte: new Date(Date.now() - 2 * 60 * 1000),
+      },
+    },
+  });
+
+  return !recentQuery;
+}
+
+async function safeTransactionStatusCheck(transactionId: string) {
+  if (!(await canQueryTransaction(transactionId))) {
+    throw new Error("Transaction queried too recently. Please wait 2 minutes.");
+  }
+
+  return await mpesa.client.transactionStatus({
+    transactionID: transactionId,
+    remarks: "Status check",
+  });
+}
+```
+
+### 3. Use for Reconciliation
+
+Schedule regular reconciliation checks for pending transactions:
+
+```typescript
+import { CronJob } from "cron";
+
+const reconciliationJob = new CronJob("0 */30 * * * *", async () => {
+  const pendingTransactions = await db.transaction.findMany({
+    where: {
+      status: "PENDING",
+      createdAt: {
+        gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        lte: new Date(Date.now() - 10 * 60 * 1000),
+      },
+    },
+  });
+
+  for (const transaction of pendingTransactions) {
+    try {
+      await mpesa.client.transactionStatus({
+        transactionID: transaction.mpesaTransactionId,
+        remarks: "Scheduled reconciliation check",
+      });
+    } catch (error) {
+      console.error(`Reconciliation failed for ${transaction.id}:`, error);
+    }
+  }
+});
+
+reconciliationJob.start();
+```
+
+### 4. Handle Transaction Not Found
+
+Not all transaction IDs will be found in M-Pesa's system:
+
+```typescript
+callbackOptions: {
+  onTransactionStatus: async (data) => {
+    if (!data.isSuccess) {
+      if (data.errorMessage?.includes("not found")) {
+        await db.transaction.update({
+          where: { mpesaTransactionId: transactionId },
+          data: {
+            status: "NOT_FOUND",
+            notes: "Transaction not found in M-Pesa system",
+          },
+        });
+
+        await notifySupport({
+          type: "transaction_not_found",
+          transactionId,
+        });
+      }
+    }
+  },
+}
+```
+
+### 5. Audit Trail
+
+Maintain a complete audit trail of all status checks:
+
+```typescript
+async function auditTransactionStatusCheck(
+  transactionId: string,
+  userId: string,
+  reason: string,
+) {
+  await db.auditLog.create({
+    data: {
+      action: "TRANSACTION_STATUS_CHECK",
+      userId,
+      transactionId,
+      reason,
+      timestamp: new Date(),
+      ipAddress: request.ip,
+    },
+  });
+
+  return await mpesa.client.transactionStatus({
+    transactionID: transactionId,
+    remarks: reason,
+  });
+}
+```
+
+## Common Scenarios
+
+### Scenario 1: Verify B2C Payment
+
+```typescript
+async function verifyB2CPayment(b2cTransactionId: string) {
+  const b2cRecord = await db.b2cTransaction.findUnique({
+    where: { id: b2cTransactionId },
+  });
+
+  if (!b2cRecord.mpesaTransactionId) {
+    throw new Error("No M-Pesa transaction ID available yet");
+  }
+
+  return await mpesa.client.transactionStatus({
+    transactionID: b2cRecord.mpesaTransactionId,
+    remarks: "Verifying B2C payment completion",
+  });
+}
+```
+
+### Scenario 2: Customer Support Query
+
+```typescript
+async function handleCustomerInquiry(customerId: string, mpesaCode: string) {
+  const customerTransaction = await db.transaction.findFirst({
+    where: {
+      customerId,
+      mpesaTransactionId: mpesaCode,
+    },
+  });
+
+  if (!customerTransaction) {
+    throw new Error("Transaction not found for this customer");
+  }
+
+  return await mpesa.client.transactionStatus({
+    transactionID: mpesaCode,
+    remarks: `Customer support inquiry for customer ${customerId}`,
+  });
+}
+```
+
+### Scenario 3: Batch Status Check
+
+```typescript
+async function batchStatusCheck(transactionIds: string[]) {
+  const results = [];
+
+  for (const transactionId of transactionIds) {
+    try {
+      const response = await mpesa.client.transactionStatus({
+        transactionID: transactionId,
+        remarks: "Batch reconciliation",
+      });
+
+      results.push({
+        transactionId,
+        success: true,
+        conversationId: response.ConversationID,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      results.push({
+        transactionId,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  return results;
+}
+```
+
+## Troubleshooting
+
+### "Invalid Initiator"
+
+**Cause**: Incorrect initiator name or security credential
+
+**Solution**:
+
+```bash
+echo $MPESA_INITIATOR_NAME
+echo $MPESA_SECURITY_CREDENTIAL
+```
+
+Verify these match your M-Pesa portal configuration exactly.
+
+### "Transaction Not Found"
+
+**Cause**: Transaction ID doesn't exist in M-Pesa system or is too old
+
+**Solution**:
+
+- Verify the transaction ID is correct
+- Check if the transaction is very old (M-Pesa may archive old transactions)
+- Ensure the transaction was actually initiated successfully
+
+### "Invalid Transaction ID"
+
+**Cause**: Transaction ID format is incorrect
+
+Ensure you're using the correct transaction ID format.
+
+### Callback Not Received
+
+**Causes**:
+
+1. Result URL not publicly accessible
+2. Firewall blocking Safaricom IPs
+3. Route not properly configured
+
+**Solutions**:
+
+```bash
+ngrok http 3000
+
+```
+
+Verify your callback route exists and is accessible.
+
+### "Request Cancelled"
+
+**Cause**: M-Pesa couldn't process the request
+
+**Solution**:
+
+- Check if your business account is active
+- Verify you have the correct permissions for transaction status queries
+- Ensure your credentials are current
+
+## Security Considerations
+
+### 1. Protect Transaction IDs
+
+Transaction IDs can be sensitive. Don't expose them unnecessarily:
+
+```typescript
+app.get("/api/transaction-status/:id", authenticate, async (req, res) => {
+  const userId = req.user.id;
+
+  const transaction = await db.transaction.findFirst({
+    where: {
+      id: req.params.id,
+      userId: userId,
+    },
+  });
+
+  if (!transaction) {
+    return res.status(404).json({ error: "Transaction not found" });
+  }
+
+  const status = await mpesa.client.transactionStatus({
+    transactionID: transaction.mpesaTransactionId,
+    remarks: "User-initiated status check",
+  });
+
+  res.json({ status });
+});
+```
+
+### 2. Rate Limit Status Queries
+
+Prevent abuse by limiting status check frequency:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: 20,
+    windowMs: 60000,
+  },
+});
+```
+
+### 3. Validate Callback IPs
+
+Always validate that callbacks are from Safaricom:
+
+```typescript
+callbackOptions: {
+  validateIp: true,
+}
+```
+
+### 4. Log All Status Queries
+
+Maintain security audit logs:
+
+```typescript
+async function loggedTransactionStatus(transactionId: string, userId: string) {
+  await db.securityLog.create({
+    data: {
+      action: "TRANSACTION_STATUS_QUERY",
+      userId,
+      transactionId,
+      timestamp: new Date(),
+      ipAddress: req.ip,
+    },
+  });
+
+  return await mpesa.client.transactionStatus({
+    transactionID: transactionId,
+    remarks: "Status check",
+  });
+}
+```
+
+## Performance Optimization
+
+### 1. Cache Recent Queries
+
+Avoid duplicate queries within a short time window:
+
+```typescript
+import { Redis } from "ioredis";
+
+const redis = new Redis();
+
+async function cachedTransactionStatus(transactionId: string) {
+  const cacheKey = `tx_status:${transactionId}`;
+  const cached = await redis.get(cacheKey);
+
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const result = await mpesa.client.transactionStatus({
+    transactionID: transactionId,
+    remarks: "Status check",
+  });
+
+  await redis.setex(cacheKey, 120, JSON.stringify(result));
+
+  return result;
+}
+```
+
+### 2. Batch Processing
+
+Process multiple status checks efficiently:
+
+```typescript
+async function batchProcessStatusChecks(transactionIds: string[]) {
+  const BATCH_SIZE = 5;
+  const DELAY_MS = 2000;
+
+  for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
+    const batch = transactionIds.slice(i, i + BATCH_SIZE);
+
+    await Promise.all(
+      batch.map((id) =>
+        mpesa.client
+          .transactionStatus({
+            transactionID: id,
+            remarks: "Batch processing",
+          })
+          .catch((err) => console.error(`Failed for ${id}:`, err)),
+      ),
+    );
+
+    if (i + BATCH_SIZE < transactionIds.length) {
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+    }
+  }
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Reversal" href="/api-reference/reversal">
+    Reverse erroneous transactions
+  </Card>
+
+<Card title="Account Balance" href="/api-reference/account-balance">
+  Check your M-Pesa account balance
+</Card>
+
+<Card title="B2C Payments" href="/api-reference/b2c">
+  Send money to customers
+</Card>
+
+  <Card title="Error Handling" href="/api-reference/error-handling">
+    Handle errors and edge cases
+  </Card>
+</Cards>

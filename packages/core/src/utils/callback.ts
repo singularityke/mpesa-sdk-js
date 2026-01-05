@@ -57,7 +57,7 @@ export interface CallbackHandlerOptions {
     errorMessage?: string;
   }) => void | Promise<void>;
 
-  onAccountBalance?: (data: {
+  onAccountBalanceResult?: (data: {
     isSuccess: boolean;
     workingBalance?: number;
     availableBalance?: number;
@@ -65,7 +65,7 @@ export interface CallbackHandlerOptions {
     errorMessage?: string;
   }) => void | Promise<void>;
 
-  onTransactionStatus?: (data: {
+  onTransactionStatusResult?: (data: {
     isSuccess: boolean;
     receiptNo?: string;
     amount?: number;
@@ -74,7 +74,7 @@ export interface CallbackHandlerOptions {
     errorMessage?: string;
   }) => void | Promise<void>;
 
-  onReversal?: (data: {
+  onReversalResult?: (data: {
     isSuccess: boolean;
     transactionId?: string;
     errorMessage?: string;

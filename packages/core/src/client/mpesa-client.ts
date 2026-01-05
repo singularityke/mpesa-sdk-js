@@ -596,8 +596,8 @@ export class MpesaClient {
     try {
       const parsed = this.callbackHandler.parseAccountBalanceCallback(callback);
 
-      if (this.callbackHandler["options"].onAccountBalance) {
-        await this.callbackHandler["options"].onAccountBalance(parsed);
+      if (this.callbackHandler["options"].onAccountBalanceResult) {
+        await this.callbackHandler["options"].onAccountBalanceResult(parsed);
       }
 
       return this.callbackHandler.createCallbackResponse(parsed.isSuccess);
@@ -620,8 +620,8 @@ export class MpesaClient {
       const parsed =
         this.callbackHandler.parseTransactionStatusCallback(callback);
 
-      if (this.callbackHandler["options"].onTransactionStatus) {
-        await this.callbackHandler["options"].onTransactionStatus(parsed);
+      if (this.callbackHandler["options"].onTransactionStatusResult) {
+        await this.callbackHandler["options"].onTransactionStatusResult(parsed);
       }
 
       return this.callbackHandler.createCallbackResponse(parsed.isSuccess);
@@ -641,8 +641,8 @@ export class MpesaClient {
     try {
       const parsed = this.callbackHandler.parseReversalCallback(callback);
 
-      if (this.callbackHandler["options"].onReversal) {
-        await this.callbackHandler["options"].onReversal(parsed);
+      if (this.callbackHandler["options"].onReversalResult) {
+        await this.callbackHandler["options"].onReversalResult(parsed);
       }
 
       return this.callbackHandler.createCallbackResponse(parsed.isSuccess);
