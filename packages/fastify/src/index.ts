@@ -40,6 +40,7 @@ export function createMpesa(config: MpesaConfig, options?: MpesaClientOptions) {
     fastify.post("/reversal-timeout", handlers.reversalTimeout);
     fastify.post("/status-result", handlers.statusResult);
     fastify.post("/status-timeout", handlers.statusTimeout);
+    fastify.post("/simulate-c2b", handlers.simulateC2B);
     return fastify;
   };
 

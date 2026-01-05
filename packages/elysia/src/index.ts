@@ -101,7 +101,8 @@ export function createMpesa(config: MpesaConfig, options?: MpesaClientOptions) {
     .post("/reversal-result", handlers.reversalResult)
     .post("/reversal-timeout", handlers.reversalTimeout)
     .post("/status-result", handlers.statusResult)
-    .post("/status-timeout", handlers.statusTimeout);
+    .post("/status-timeout", handlers.statusTimeout)
+    .post("/simulate-c2b", handlers.simulateC2B);
 
   return {
     /**

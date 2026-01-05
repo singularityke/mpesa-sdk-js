@@ -32,6 +32,8 @@ import {
   AccountBalanceCallback,
   B2BCallback,
   B2CCallback,
+  C2BSimulateRequest,
+  C2BSimulateResponse,
 } from "../types/mpesa";
 import {
   MpesaValidationError,
@@ -564,6 +566,40 @@ export class MpesaClient {
         "Processing failed",
       );
     }
+  }
+  /**
+   * Simulate C2B transaction (for testing in sandbox)
+   */
+  async simulateC2B(request: C2BSimulateRequest): Promise<C2BSimulateResponse> {
+    if (this.config.environment === "production") {
+      throw new MpesaValidationError(
+        "C2B simulation is only available in sandbox environment. " +
+          "In production, C2B transactions come from real customer payments.",
+      );
+    }
+    if (request.amount < 1) {
+      throw new MpesaValidationError("Amount must be at least 1 KES");
+    }
+
+    if (!request.billRefNumber) {
+      throw new MpesaValidationError("Bill reference number is required");
+    }
+
+    const phone = this.validateAndFormatPhone(request.phoneNumber);
+
+    const payload = {
+      ShortCode: this.config.shortcode,
+      CommandID: request.commandID || "CustomerPayBillOnline",
+      Amount: Math.floor(request.amount),
+      Msisdn: phone,
+      BillRefNumber: request.billRefNumber,
+    };
+
+    return this.makeRequest<C2BSimulateResponse>(
+      "/mpesa/c2b/v1/simulate",
+      payload,
+      `c2b:simulate:${phone}`,
+    );
   }
 
   /**

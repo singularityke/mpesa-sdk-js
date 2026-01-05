@@ -105,6 +105,7 @@ export function createMpesa(config: MpesaConfig, options?: MpesaClientOptions) {
     expressRouter.post("/reversal-timeout", handlers.reversalTimeout);
     expressRouter.post("/status-result", handlers.statusResult);
     expressRouter.post("/status-timeout", handlers.statusTimeout);
+    expressRouter.post("/simulate-c2b", handlers.simulateC2B);
 
     return expressRouter;
   };

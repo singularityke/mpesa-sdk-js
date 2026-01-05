@@ -24,6 +24,8 @@ export type {
   GeneralTransactionStatusRequest,
   GeneralTransactionStatusResponse,
   TransactionStatusCallback,
+  C2BSimulateRequest,
+  C2BSimulateResponse,
   ReversalRequest,
   ReversalResponse,
   ReversalCallback,

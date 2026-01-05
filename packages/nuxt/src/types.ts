@@ -9,4 +9,5 @@ export interface MpesaEventHandlers {
   b2cResult: MpesaEventHandler;
   b2cTimeout: MpesaEventHandler;
   catchAll: MpesaEventHandler;
+  simulateC2B: MpesaEventHandler;
 }

@@ -8,6 +8,7 @@ import {
   type AccountBalanceRequest,
   type TransactionStatusCallback,
   type ReversalCallback,
+  type C2BSimulateRequest,
 } from "@singularity-payments/core";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { MpesaRouteHandlers } from "./types";
@@ -33,6 +34,32 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
           ResultCode: 1,
           ResultDesc: "Internal error processing callback",
         });
+      }
+    },
+    simulateC2B: async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { amount, phoneNumber, billRefNumber, commandID } =
+          req.body as C2BSimulateRequest;
+
+        if (!amount || !phoneNumber || !billRefNumber) {
+          reply.status(400).send({
+            error:
+              "Amount, phone number, and bill reference number are required",
+          });
+          return;
+        }
+
+        const response = await client.simulateC2B({
+          amount: Number(amount),
+          phoneNumber: String(phoneNumber),
+          billRefNumber: String(billRefNumber),
+          commandID: commandID as any,
+        });
+
+        reply.send(response);
+      } catch (error: any) {
+        console.error("C2B Simulate error:", error);
+        reply.status(500).send({ error: error.message || "Request failed" });
       }
     },
 

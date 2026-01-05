@@ -279,3 +279,15 @@ export interface DynamicQRResponse {
   ResponseDescription: string;
   QRCode: string; // Base64 encoded image
 }
+export interface C2BSimulateRequest {
+  amount: number;
+  phoneNumber: string;
+  billRefNumber: string;
+  commandID?: "CustomerPayBillOnline" | "CustomerBuyGoodsOnline";
+}
+
+export interface C2BSimulateResponse {
+  ConversationID: string;
+  OriginatorCoversationID: string;
+  ResponseDescription: string;
+}

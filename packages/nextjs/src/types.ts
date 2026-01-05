@@ -19,4 +19,5 @@ export interface MpesaRouteHandlers {
   transactionStatusTimeout: RouteHandler;
   reversalResult: RouteHandler;
   reversalTimeout: RouteHandler;
+  simulateC2B: RouteHandler;
 }

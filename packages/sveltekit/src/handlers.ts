@@ -8,6 +8,7 @@ import {
   type AccountBalanceRequest,
   type TransactionStatusCallback,
   type ReversalCallback,
+  C2BSimulateRequest,
 } from "@singularity-payments/core";
 import type { RequestEvent } from "@sveltejs/kit";
 import { json } from "@sveltejs/kit";
@@ -40,6 +41,50 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
               ResultDesc: "Internal error processing callback",
             },
             { status: 200 },
+          );
+        }
+      },
+    },
+    /**
+     * C2B simulation handler (for testing)
+     * Simulates a C2B payment transaction
+     */
+    simulateC2B: {
+      POST: async (event: RequestEvent) => {
+        try {
+          const body = (await event.request.json()) as {
+            amount?: number;
+            phoneNumber?: string;
+            billRefNumber?: string;
+            commandID?: string;
+          };
+
+          const { amount, phoneNumber, billRefNumber, commandID } =
+            body as C2BSimulateRequest;
+
+          if (!amount || !phoneNumber || !billRefNumber) {
+            return json(
+              {
+                error:
+                  "Amount, phone number, and bill reference number are required",
+              },
+              { status: 400 },
+            );
+          }
+
+          const response = await client.simulateC2B({
+            amount: Number(amount),
+            phoneNumber: String(phoneNumber),
+            billRefNumber: String(billRefNumber),
+            commandID: commandID,
+          });
+
+          return json(response);
+        } catch (error: any) {
+          console.error("C2B Simulate error:", error);
+          return json(
+            { error: error.message || "Request failed" },
+            { status: 500 },
           );
         }
       },
@@ -523,6 +568,37 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
 
             // Call M-Pesa STK Query API
             const response = await client.stkQuery({ CheckoutRequestID });
+            return json(response);
+          }
+          if (lastSegment === "simulate-c2b") {
+            const body = (await event.request.json()) as {
+              amount?: number;
+              phoneNumber?: string;
+              billRefNumber?: string;
+              commandID?: string;
+            };
+
+            const { amount, phoneNumber, billRefNumber, commandID } =
+              body as C2BSimulateRequest;
+
+            // Validate required field
+            if (!amount || !phoneNumber || !billRefNumber || !commandID) {
+              return json(
+                {
+                  error:
+                    "Amount, phone number, bill reference number, and command ID are required",
+                },
+                { status: 400 },
+              );
+            }
+
+            // Call M-Pesa C2B Simulate API
+            const response = await client.simulateC2B({
+              amount,
+              phoneNumber,
+              billRefNumber,
+              commandID,
+            });
             return json(response);
           }
 

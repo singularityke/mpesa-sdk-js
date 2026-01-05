@@ -17,6 +17,8 @@ import type {
   C2BRegisterResponse,
   DynamicQRRequest,
   DynamicQRResponse,
+  C2BSimulateRequest,
+  C2BSimulateResponse,
 } from "@singularity-payments/core";
 
 export interface MpesaClientConfig {
@@ -69,6 +71,13 @@ export class MpesaSvelteClient {
   async stkQuery(request: TransactionStatusRequest) {
     return this.request<TransactionStatusResponse>(
       "/api/mpesa/stk-query",
+      request,
+    );
+  }
+
+  async simulateC2B(request: C2BSimulateRequest) {
+    return this.request<C2BSimulateResponse>(
+      "/api/mpesa/simulate-c2b",
       request,
     );
   }

@@ -8,6 +8,7 @@ import {
   type AccountBalanceRequest,
   type TransactionStatusCallback,
   type ReversalCallback,
+  C2BSimulateRequest,
 } from "@singularity-payments/core";
 import type { Request, Response } from "express";
 import type { MpesaRouteHandlers } from "./types";
@@ -47,6 +48,32 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
           ResultCode: 1,
           ResultDesc: "Validation failed",
         });
+      }
+    },
+    simulateC2B: async (req: Request, res: Response) => {
+      try {
+        const { amount, phoneNumber, billRefNumber, commandID } =
+          req.body as C2BSimulateRequest;
+
+        if (!amount || !phoneNumber || !billRefNumber) {
+          res.status(400).json({
+            error:
+              "Amount, phone number, and bill reference number are required",
+          });
+          return;
+        }
+
+        const response = await client.simulateC2B({
+          amount: Number(amount),
+          phoneNumber: String(phoneNumber),
+          billRefNumber: String(billRefNumber),
+          commandID: commandID as any,
+        });
+
+        res.json(response);
+      } catch (error: any) {
+        console.error("C2B Simulate error:", error);
+        res.status(500).json({ error: error.message || "Request failed" });
       }
     },
 

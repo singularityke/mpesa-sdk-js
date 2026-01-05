@@ -1,0 +1,476 @@
+---
+title: C2B Simulation
+description: Test C2B payments in sandbox environment
+---
+
+## Overview
+
+C2B (Customer to Business) Simulation allows you to test customer-initiated payments in the sandbox environment. This simulates a customer making a payment from their M-Pesa account to your paybill or till number.
+
+## How It Works
+
+1. **Simulate Payment**: Your application sends a simulation request to M-Pesa sandbox
+2. **M-Pesa Processes**: Sandbox processes the simulated payment
+3. **Validation Callback**: M-Pesa sends validation request to your validation URL
+4. **Confirmation Callback**: M-Pesa sends confirmation to your confirmation URL
+5. **Process Result**: Your application processes the payment confirmation
+
+## Usage
+
+### Client Side
+
+```typescript
+const response = await mpesaClient.simulateC2B({
+  amount: 100,
+  phoneNumber: "254712345678",
+  billRefNumber: "INV-001",
+  commandID: "CustomerPayBillOnline",
+});
+```
+
+### Server Side
+
+```typescript
+const response = await mpesa.client.simulateC2B({
+  amount: 100,
+  phoneNumber: "254712345678",
+  billRefNumber: "INV-001",
+  commandID: "CustomerPayBillOnline",
+});
+```
+
+### Successful Response
+
+```json
+{
+  "ConversationID": "AG_20231215_000012345678901",
+  "OriginatorCoversationID": "12345-67890-1",
+  "ResponseDescription": "Accept the service request successfully."
+}
+```
+
+### Complete Example
+
+```typescript
+import { db } from "./db";
+import { payments, products } from "./schema";
+import { eq } from "drizzle-orm";
+import { mpesa } from "@/lib/mpesa";
+
+interface SimulatePaymentRequest {
+  productId: string;
+  phoneNumber: string;
+  billRefNumber: string;
+}
+
+async function simulateCustomerPayment(request: SimulatePaymentRequest) {
+  const { productId, phoneNumber, billRefNumber } = request;
+
+  try {
+    const product = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+
+    if (product.length === 0) {
+      throw new Error("Product not found");
+    }
+
+    const amount = product[0].price;
+
+    const response = await mpesa.client.simulateC2B({
+      amount: Number(amount),
+      phoneNumber,
+      billRefNumber,
+      commandID: "CustomerPayBillOnline",
+    });
+
+    await db.insert(payments).values({
+      conversationId: response.ConversationID,
+      originatorConversationId: response.OriginatorCoversationID,
+      productId,
+      phoneNumber,
+      amount,
+      billRefNumber,
+      status: "pending",
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      conversationId: response.ConversationID,
+      message: response.ResponseDescription,
+    };
+  } catch (error) {
+    console.error("Simulation failed:", error);
+    throw error;
+  }
+}
+```
+
+## API Reference
+
+### C2B Simulate Request
+
+```typescript
+interface C2BSimulateRequest {
+  amount: number;
+  phoneNumber: string;
+  billRefNumber: string;
+  commandID?: "CustomerPayBillOnline" | "CustomerBuyGoodsOnline";
+}
+```
+
+#### Parameters
+
+| Parameter       | Type   | Required | Description                                       |
+| --------------- | ------ | -------- | ------------------------------------------------- |
+| `amount`        | number | Yes      | Payment amount in KES. Minimum: 1                 |
+| `phoneNumber`   | string | Yes      | Customer's phone number. Format: `254XXXXXXXXX`   |
+| `billRefNumber` | string | Yes      | Account reference/bill reference number           |
+| `commandID`     | string | No       | Payment type. Defaults to `CustomerPayBillOnline` |
+
+#### Command IDs
+
+| Command ID               | Description               | Use Case         |
+| ------------------------ | ------------------------- | ---------------- |
+| `CustomerPayBillOnline`  | Payment to paybill        | Paybill payments |
+| `CustomerBuyGoodsOnline` | Payment to till/buy goods | Till payments    |
+
+### C2B Simulate Response
+
+```typescript
+interface C2BSimulateResponse {
+  ConversationID: string;
+  OriginatorCoversationID: string;
+  ResponseDescription: string;
+}
+```
+
+## Handling C2B Callbacks
+
+### Validation Callback
+
+The validation callback allows you to accept or reject payments before they are processed.
+
+```typescript
+import { MpesaClient } from "@singularity-payments/nextjs";
+
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    c2bValidationOptions: {
+      onValidate: async (data) => {
+        console.log("Validating payment:", {
+          amount: data.TransAmount,
+          billRefNumber: data.BillRefNumber,
+          phone: data.MSISDN,
+        });
+
+        const amount = parseFloat(data.TransAmount);
+
+        if (amount < 10) {
+          return {
+            accept: false,
+            message: "Minimum payment is KES 10",
+          };
+        }
+
+        const order = await db.orders.findUnique({
+          where: { billRefNumber: data.BillRefNumber },
+        });
+
+        if (!order) {
+          return {
+            accept: false,
+            message: "Invalid bill reference number",
+          };
+        }
+
+        if (order.amount !== amount) {
+          return {
+            accept: false,
+            message: "Amount does not match order",
+          };
+        }
+
+        return {
+          accept: true,
+          message: "Payment validated successfully",
+        };
+      },
+    },
+  },
+);
+```
+
+### Confirmation Callback
+
+The confirmation callback is called after a successful payment.
+
+```typescript
+import { MpesaClient } from "@singularity-payments/nextjs";
+
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    c2bConfirmationOptions: {
+      onConfirm: async (data) => {
+        console.log("Payment confirmed:", {
+          transactionId: data.TransID,
+          amount: data.TransAmount,
+          billRefNumber: data.BillRefNumber,
+          phone: data.MSISDN,
+          transactionTime: data.TransTime,
+        });
+
+        await db.payments.create({
+          data: {
+            transactionId: data.TransID,
+            amount: parseFloat(data.TransAmount),
+            billRefNumber: data.BillRefNumber,
+            phoneNumber: data.MSISDN,
+            transactionTime: new Date(data.TransTime),
+            businessShortCode: data.BusinessShortCode,
+            status: "completed",
+          },
+        });
+
+        await db.orders.update({
+          where: { billRefNumber: data.BillRefNumber },
+          data: {
+            status: "paid",
+            paidAt: new Date(),
+          },
+        });
+
+        await sendConfirmationEmail(data);
+      },
+
+      isDuplicate: async (transactionId) => {
+        const existing = await db.payments.findUnique({
+          where: { transactionId },
+        });
+        return !!existing;
+      },
+
+      validateIp: true,
+    },
+  },
+);
+```
+
+### C2B Callback Data Structure
+
+```typescript
+interface C2BCallback {
+  TransactionType: string;
+  TransID: string;
+  TransTime: string;
+  TransAmount: string;
+  BusinessShortCode: string;
+  BillRefNumber: string;
+  InvoiceNumber?: string;
+  OrgAccountBalance?: string;
+  ThirdPartyTransID?: string;
+  MSISDN: string;
+  FirstName?: string;
+  MiddleName?: string;
+  LastName?: string;
+}
+```
+
+## Registering C2B URLs
+
+Before using C2B, you must register your validation and confirmation URLs with M-Pesa.
+
+### Server Side
+
+```typescript
+const response = await mpesa.client.registerC2BUrl({
+  shortCode: "600000",
+  responseType: "Completed",
+  confirmationURL: "https://yourdomain.com/api/mpesa/c2b-confirmation",
+  validationURL: "https://yourdomain.com/api/mpesa/c2b-validation",
+});
+```
+
+### Client Side
+
+```typescript
+const { data, error } = await mpesaClient.registerC2B({
+  shortCode: "600000",
+  responseType: "Completed",
+  confirmationURL: "https://yourdomain.com/api/mpesa/c2b-confirmation",
+  validationURL: "https://yourdomain.com/api/mpesa/c2b-validation",
+});
+```
+
+### Register Request
+
+```typescript
+interface C2BRegisterRequest {
+  shortCode: string;
+  responseType: "Completed" | "Cancelled";
+  confirmationURL: string;
+  validationURL: string;
+}
+```
+
+#### Parameters
+
+| Parameter         | Type   | Required | Description                                    |
+| ----------------- | ------ | -------- | ---------------------------------------------- |
+| `shortCode`       | string | Yes      | Your paybill or till number                    |
+| `responseType`    | string | Yes      | When to send confirmation: Completed/Cancelled |
+| `confirmationURL` | string | Yes      | URL to receive payment confirmations           |
+| `validationURL`   | string | Yes      | URL to validate payments before processing     |
+
+### Register Response
+
+```typescript
+interface C2BRegisterResponse {
+  OriginatorCoversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
+}
+```
+
+## Best Practices
+
+### 1. Validate Before Confirming
+
+Always implement validation to prevent invalid payments:
+
+```typescript
+c2bValidationOptions: {
+  onValidate: async (data) => {
+    const isValid = await validatePayment(data);
+    return {
+      accept: isValid,
+      message: isValid ? "Valid payment" : "Invalid payment details",
+    };
+  },
+}
+```
+
+### 2. Prevent Duplicate Processing
+
+Check for duplicate transactions:
+
+```typescript
+c2bConfirmationOptions: {
+  isDuplicate: async (transactionId) => {
+    const exists = await db.payments.findUnique({
+      where: { transactionId },
+    });
+    return !!exists;
+  },
+}
+```
+
+### 3. Store Transaction Details
+
+Always store complete transaction information:
+
+```typescript
+await db.payments.create({
+  data: {
+    transactionId: data.TransID,
+    amount: parseFloat(data.TransAmount),
+    billRefNumber: data.BillRefNumber,
+    phoneNumber: data.MSISDN,
+    businessShortCode: data.BusinessShortCode,
+    transactionTime: new Date(data.TransTime),
+    transactionType: data.TransactionType,
+    firstName: data.FirstName,
+    middleName: data.MiddleName,
+    lastName: data.LastName,
+  },
+});
+```
+
+### 4. Validate IP Addresses
+
+Enable IP validation in production:
+
+```typescript
+c2bConfirmationOptions: {
+  validateIp: true,
+}
+```
+
+## Troubleshooting
+
+### "Invalid Access Token"
+
+**Cause**: Consumer key/secret incorrect or expired
+
+**Solution**:
+
+```bash
+echo $MPESA_CONSUMER_KEY
+echo $MPESA_CONSUMER_SECRET
+```
+
+### "Invalid ShortCode"
+
+**Cause**: Incorrect shortcode for environment
+
+**Solution**:
+
+```typescript
+shortcode: "600000";
+```
+
+### Validation Callback Not Received
+
+**Causes**:
+
+1. URLs not registered with M-Pesa
+2. Callback URL not publicly accessible
+3. Firewall blocking Safaricom IPs
+
+**Solutions**:
+
+```bash
+ngrok http 3000
+```
+
+```typescript
+await mpesa.client.registerC2BUrl({
+  shortCode: "600000",
+  responseType: "Completed",
+  confirmationURL: "https://your-ngrok-url.ngrok.io/api/mpesa/c2b-confirmation",
+  validationURL: "https://your-ngrok-url.ngrok.io/api/mpesa/c2b-validation",
+});
+```
+
+### Payment Rejected in Validation
+
+**Cause**: Validation callback returned accept: false
+
+**Solution**: Check validation logic:
+
+```typescript
+c2bValidationOptions: {
+  onValidate: async (data) => {
+    console.log("Validation data:", data);
+    return { accept: true, message: "Accepted" };
+  },
+}
+```
+
+## Important Notes
+
+1. C2B simulation only works in sandbox environment
+2. You must register C2B URLs before simulating payments
+3. Validation callback must respond within 30 seconds
+4. Use paybill shortcode for CustomerPayBillOnline
+5. Use till number for CustomerBuyGoodsOnline
+6. Test phone numbers in sandbox: 254708374149

@@ -40,6 +40,7 @@ export function createMpesa(config: MpesaConfig, options?: MpesaClientOptions) {
   app.post("/reversal-timeout", handlers.reversalTimeout);
   app.post("/status-result", handlers.statusResult);
   app.post("/status-timeout", handlers.statusTimeout);
+  app.post("/simulate-c2b", handlers.simulateC2B);
 
   return {
     client,

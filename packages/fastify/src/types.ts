@@ -27,4 +27,5 @@ export interface MpesaRouteHandlers {
   reversal: MpesaRouteHandler;
   registerC2B: MpesaRouteHandler;
   generateQR: MpesaRouteHandler;
+  simulateC2B: MpesaRouteHandler;
 }
