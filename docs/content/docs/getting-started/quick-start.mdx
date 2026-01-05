@@ -326,10 +326,7 @@ MPESA_SHORTCODE=174379 #For STK Push Testing in Sandbox(Replace with your shortc
 MPESA_PASSKEY=your_passkey
 MPESA_ENVIRONMENT=sandbox # or 'production'
 APP_URL=https://your-app-url.com
-# For STK Push you can just include the 6 above
-# Required for B2C, B2B, Reversal, Transaction Status, and Account Balance
-MPESA_INITIATOR_NAME=testapi #Initiator Name for Sandbox
-MPESA_SECURITY_CREDENTIAL=your_security_credential
+
 ```
 
 <Callout type="warn">
@@ -699,7 +696,7 @@ export const mpesaClient = createMpesaClient({
   baseUrl: "http://localhost:3000", // your backend url(Use "" if the backend and frontend are on the same port)
 });
 
-````
+`````
 
   </Tab>
 </Tabs>
@@ -718,7 +715,28 @@ const { data, error } = await mpesaClient.stkPush({
    });
 ```
 
+## Example
 
+````tsx
+"use client";
+import { mpesaClient } from "~/lib/mpesa-client";
+
+export default function PaymentForm() {
+  const handlePay = async () => {
+    const { data, error } = await mpesaClient.stkPush({
+      amount: 1,
+      phoneNumber: "+254740185793",
+      accountReference: "singularity",
+      transactionDesc: "Quick Start",
+    });
+  };
+  return (
+    <div>
+      <button onClick={handlePay}>Pay</button>
+    </div>
+  );
+}
+`````
 
 ## Test Your Integration
 
@@ -772,7 +790,6 @@ Enter your M-Pesa PIN to complete the payment
 
 - Explore [API Reference](/docs/api)
 
+```
 
-
-
-````
+```

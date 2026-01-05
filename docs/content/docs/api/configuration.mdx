@@ -1,17 +1,15 @@
 ---
-title: Configuration
-description: Complete guide to configuring Singularity Payments SDK for M-Pesa integration
+title: Advanced Configuration
+description: Detailed configuration guide for B2C, B2B, reversals, and advanced M-Pesa operations
 ---
 
 ## Overview
 
-The SDK requires M-Pesa API credentials from Safaricom's Developer Portal. Configuration is framework-agnostic and works the same across all packages.
+This guide covers advanced M-Pesa operations including B2C payments, B2B transfers, transaction reversals, status queries, and account balance checks. These operations require additional credentials beyond the basic STK Push configuration.
 
 ## Required Credentials
 
-### Basic Configuration
-
-All M-Pesa integrations require these core credentials:
+### Complete Configuration Interface
 
 ```typescript
 interface MpesaConfig {
@@ -21,88 +19,119 @@ interface MpesaConfig {
   shortcode: string;
   environment: "sandbox" | "production";
   callbackUrl?: string;
-
-  // Required for B2C, B2B, Reversal, Transaction Status, Account Balance
-  initiatorName?: string;
-  securityCredential?: string;
-  resultUrl?: string;
-  timeoutUrl?: string;
+  initiatorName: string;
+  securityCredential: string;
+  resultUrl: string;
+  timeoutUrl: string;
 }
 ```
 
-### Configuration Example
+### Full SDK Initialization
 
 ```typescript
-import { MpesaClient } from "@singularity-payments/nextjs"; // change depending on the framework
+import { MpesaClient } from "@singularity-payments/nextjs";
 
 const client = new MpesaClient({
-  consumerKey: "your_consumer_key",
-  consumerSecret: "your_consumer_secret",
-  passkey: "your_passkey",
-  shortcode: "174379",
+  consumerKey: process.env.MPESA_CONSUMER_KEY,
+  consumerSecret: process.env.MPESA_CONSUMER_SECRET,
+  passkey: process.env.MPESA_PASSKEY,
+  shortcode: process.env.MPESA_SHORTCODE,
   environment: "sandbox",
-  callbackUrl: "https://yourdomain.com/api/mpesa/callback",
-
-  // Optional: For advanced operations
-  initiatorName: "testapi",
-  securityCredential: "your_security_credential",
-  resultUrl: "https://yourdomain.com/api/mpesa/result",
-  timeoutUrl: "https://yourdomain.com/api/mpesa/timeout",
+  callbackUrl: process.env.MPESA_CALLBACK_URL,
+  initiatorName: process.env.MPESA_INITIATOR_NAME,
+  securityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
+  resultUrl: process.env.MPESA_RESULT_URL,
+  timeoutUrl: process.env.MPESA_TIMEOUT_URL,
 });
 ```
 
-## Getting M-Pesa Credentials
+## Sandbox Test Credentials
 
-### Step 1: Create a Safaricom Developer Account
+### STK Push Configuration
 
-1. Go to [Safaricom Developer Portal](https://developer.safaricom.co.ke/)
-2. Click **Sign Up** and create an account
-3. Verify your email address
-4. Log in to your account
+For STK Push operations, use shortcode `174379`:
 
-### Step 2: Create an App
+```bash
+MPESA_CONSUMER_KEY=your_sandbox_consumer_key
+MPESA_CONSUMER_SECRET=your_sandbox_consumer_secret
+MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
+MPESA_SHORTCODE=174379
+MPESA_ENVIRONMENT=sandbox
+MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok.io/api/mpesa/callback
+```
 
-1. Navigate to **[My Apps](https://developer.safaricom.co.ke/dashboard/myapps)**
-2. Click **Create Sandbox App**
-3. Fill in the app details:
-   - **App Name**: Your application name
-   - **Description**: Brief description of your app
-4. Select the APIs you need:
-   - Lipa Na M-Pesa (STK Push)
-   - M-Pesa Sandobox (For M-Pesa Sandbox B2B, B2C and C2B)
+### B2C, B2B, and Advanced Operations Configuration
 
-Or more
+For B2C, B2B, reversals, transaction status, and account balance operations, use shortcode `600998`:
 
-5. Click **Create App**
+```bash
+MPESA_CONSUMER_KEY=your_sandbox_consumer_key
+MPESA_CONSUMER_SECRET=your_sandbox_consumer_secret
+MPESA_SHORTCODE=600998
+MPESA_ENVIRONMENT=sandbox
+MPESA_INITIATOR_NAME=testapi
+MPESA_RESULT_URL=https://your-ngrok-url.ngrok.io/api/mpesa/result
+MPESA_TIMEOUT_URL=https://your-ngrok-url.ngrok.io/api/mpesa/timeout
+```
 
-### Step 3: Get Your Credentials
+Initiator Password: `Safaricom123!!`
 
-After creating your app, you'll receive:
+### Complete Environment Variables
 
-- **Consumer Key**: Found on your app's page
-- **Consumer Secret**: Found on your app's page (click to reveal)
-- **Passkey**: For sandbox, use the test passkey. For production, request from Safaricom
-- **Shortcode**: For sandbox we will use the test shortcodes but in production it will be your business shortcode (paybill or till number)
+```bash
+MPESA_CONSUMER_KEY=your_sandbox_consumer_key
+MPESA_CONSUMER_SECRET=your_sandbox_consumer_secret
+MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
+MPESA_SHORTCODE=174379
+MPESA_ENVIRONMENT=sandbox
+MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok.io/api/mpesa/callback
+MPESA_INITIATOR_NAME=testapi
+MPESA_SECURITY_CREDENTIAL=your_generated_security_credential
+MPESA_RESULT_URL=https://your-ngrok-url.ngrok.io/api/mpesa/result
+MPESA_TIMEOUT_URL=https://your-ngrok-url.ngrok.io/api/mpesa/timeout
+```
+
+## Generating Security Credential
+
+The security credential is an encrypted version of your initiator password. Here's how to generate it:
+
+### Step 1: Access Credential Generator
+
+1. Go to [Safaricom Developer Portal Test Credentials](https://developer.safaricom.co.ke/dashboard/testcredentials)
+2. Log in to your account
+
+### Step 2: Generate Credential
+
+1. In the **Initiator Security Password** field, enter: `Safaricom123!!`
+2. Select **Sandbox** from the environment dropdown
+3. Click **Generate Security Credential**
+4. Copy the generated credential
+
+### Step 3: Add to Environment Variables
+
+```bash
+MPESA_SECURITY_CREDENTIAL=<paste_generated_credential_here>
+```
+
+### Production Security Credential
+
+For production:
+
+1. Use your production initiator password provided by Safaricom
+2. Select **Production** environment when generating
+3. Store securely in environment variables
 
 ## Configuration Fields Explained
 
 ### Consumer Key & Consumer Secret
 
-**What they are:** OAuth credentials used to authenticate your application with the M-Pesa API.
+OAuth credentials used to authenticate your application with the M-Pesa API.
 
-**How to get them:**
+**Sandbox**: Generated when you create an app on the developer portal
 
-- **Sandbox**: Automatically generated when you create an app on the developer portal
-- **Production**: Provided by Safaricom after going live
+**Production**: Provided by Safaricom after going live
 
-**Security:**
-
-<Callout type="warning">
-  Never commit these to version control - Store in environment variables -
-  Rotate regularly in production
-</Callout>
-
-**Example:**
+**Security**: Never commit to version control. Store in environment variables and rotate regularly.
 
 ```bash
 MPESA_CONSUMER_KEY=your_consumer_key
@@ -111,28 +140,21 @@ MPESA_CONSUMER_SECRET=your_consumer_secret
 
 ### Passkey
 
-**What it is:** A unique key used to generate passwords for STK Push requests. It adds an extra layer of security.
+A unique key used to generate passwords for STK Push requests.
 
-**Sandbox Passkey:**
+**Sandbox Passkey**:
 
 ```
 bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
 ```
 
-**Production Passkey:**
+**Production Passkey**: Provided by Safaricom when your app goes live
 
-- Provided by Safaricom when your app goes live
-- Usually sent via email after approval
-- Different from sandbox passkey
-
-**How it's used:**
 The SDK automatically generates a password using:
 
 ```
 Base64(Shortcode + Passkey + Timestamp)
 ```
-
-**Example:**
 
 ```bash
 MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
@@ -140,116 +162,66 @@ MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
 
 ### Shortcode
 
-**What it is:** Your M-Pesa business number (Paybill or Till Number).
+Your M-Pesa business number used for transactions.
 
-**Types of Shortcodes:**
+**Sandbox Shortcodes**:
 
-1. **Paybill Number** (e.g., `174379`)
-   - Used for collecting payments
-   - Customers see this number when paying
-   - Common for businesses and organizations
+- `174379`: For STK Push operations
+- `600998`: For B2C, B2B, reversals, transaction status, and account balance operations
 
-2. **Till Number** (e.g., `123456`)
-   - Used by merchants
-   - Associated with a specific merchant location
-   - Common for retail and small businesses
-
-3. **Buy Goods and Services** (e.g., `123456`)
-   - Similar to till numbers
-   - Used for retail transactions
-
-**Sandbox Shortcodes:**
-
-For testing, use these Safaricom-provided shortcodes:
-
-| Shortcode | Type    | Description                  |
-| --------- | ------- | ---------------------------- |
-| `174379`  | Paybill | Default test paybill number  |
-| `600000`  | Till    | Test till number for C2B     |
-| `600981`  | Till    | Alternative test till number |
-
-**Production Shortcode:**
-
-- Your actual business paybill or till number
-- Must be registered with Safaricom
-- Requires a valid M-Pesa business account
-
-**Example:**
+**Production Shortcode**: Your actual business number provided by Safaricom
 
 ```bash
 MPESA_SHORTCODE=174379
+MPESA_SHORTCODE=600998
 ```
 
 ### Environment
 
-**What it is:** Specifies which M-Pesa environment to use.
+Specifies which M-Pesa environment to use.
 
-**Options:**
+**Sandbox** (Development/Testing):
 
-1. **`sandbox`** (Development/Testing)
-   - Base URL: `https://sandbox.safaricom.co.ke`
-   - Uses test credentials
-   - No real money transactions
-   - Use test phone numbers
-   - Transactions to your phone number are refunded
+- Base URL: `https://sandbox.safaricom.co.ke`
+- Uses test credentials
+- No real money transactions
+- Transactions refunded automatically
 
-2. **`production`** (Live)
-   - Base URL: `https://api.safaricom.co.ke`
-   - Uses production credentials
-   - Real money transactions
-   - Requires approval from Safaricom
-   - Must complete compliance requirements
+**Production** (Live):
 
-**Example:**
+- Base URL: `https://api.safaricom.co.ke`
+- Uses production credentials
+- Real money transactions
+- Requires Safaricom approval
 
 ```typescript
-// Development
 environment: "sandbox";
-
-// Production
 environment: "production";
 ```
 
 ### Callback URL
 
-**What it is:** The URL where M-Pesa sends transaction notifications after processing.
+The URL where M-Pesa sends transaction notifications after processing STK Push requests.
 
-**Requirements:**
+**Requirements**:
 
-- Must be publicly accessible (not localhost)
+- Must be publicly accessible
 - Must use HTTPS in production
 - Must respond with status 200
 - Must respond within 30 seconds
 
-**For Development:**
-Use a tunneling service to expose localhost:
-
-- [ngrok](https://ngrok.com/): `ngrok http 3000`
-- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)
-- [LocalTunnel](https://localtunnel.github.io/www/)
-
-**Example:**
+**Development**: Use ngrok, Cloudflare Tunnel, or LocalTunnel
 
 ```bash
-# Development (using ngrok)
 MPESA_CALLBACK_URL=https://abc123.ngrok.io/api/mpesa/callback
-
-# Production
 MPESA_CALLBACK_URL=https://yourdomain.com/api/mpesa/callback
-```
-
-**Path Structure:**
-Your callback URL should match the route setup which the SDK provides
-
-```
-/api/mpesa/callback
 ```
 
 ### Initiator Name
 
-**What it is:** The username for initiating B2C, B2B, reversals, and other organizational transactions.
+The username for initiating B2C, B2B, reversals, and other organizational transactions.
 
-**When required:**
+**When Required**:
 
 - B2C (Business to Customer)
 - B2B (Business to Business)
@@ -257,19 +229,9 @@ Your callback URL should match the route setup which the SDK provides
 - Transaction Status Query
 - Account Balance Query
 
-**Sandbox Initiator:**
+**Sandbox Initiator**: `testapi`
 
-```
-testapi
-```
-
-**Production Initiator:**
-
-- Provided by Safaricom during onboarding
-- Usually your organization's API operator username
-- Different from consumer key
-
-**Example:**
+**Production Initiator**: Provided by Safaricom during onboarding
 
 ```bash
 MPESA_INITIATOR_NAME=testapi
@@ -277,30 +239,13 @@ MPESA_INITIATOR_NAME=testapi
 
 ### Security Credential
 
-**What it is:** An encrypted password used to authenticate organizational transactions (B2C, B2B, reversals, etc.).
+An encrypted password used to authenticate organizational transactions.
 
-**How to generate:**
+Generated using the Safaricom Developer Portal credential generator with your initiator password.
 
-1.  [Go to Safaricom Developer Portal](https://developer.safaricom.co.ke/dashboard/testcredentials)
+**Sandbox**: Generate using password `Safaricom123!!`
 
-2.  Generate the credential:
-
-- Enter your Initiator Password in the field
-- Select your environment (Sandbox or Production)
-- Click "Generate Password"
-- Copy the generated security credential
-
-3. Sandbox:
-
-- Use the sandbox initiator password
-- Select "Sandbox" environment when generating
-
-4. Production:
-
-- Use your production initiator password (provided by Safaricom)
-- Select "Production" environment when generating
-
-**Example:**
+**Production**: Generate using your production initiator password
 
 ```bash
 MPESA_SECURITY_CREDENTIAL=<paste_generated_credential_here>
@@ -308,9 +253,10 @@ MPESA_SECURITY_CREDENTIAL=<paste_generated_credential_here>
 
 ### Result URL
 
-**What it is:** URL where M-Pesa sends the final result of organizational transactions (B2C, B2B, etc.).
+URL where M-Pesa sends the final result of organizational transactions.
+In the SDK the result url is usually passed when initiating transactions, but we set it globally if you are not doing multiple types of transactions eg( B2C and Reversals) and as a fallback.
 
-**When required:**
+**When Required**:
 
 - B2C payments
 - B2B payments
@@ -318,14 +264,11 @@ MPESA_SECURITY_CREDENTIAL=<paste_generated_credential_here>
 - Transaction status queries
 - Account balance queries
 
-**Requirements:**
+**Requirements**:
 
 - Must be publicly accessible
 - Must use HTTPS in production
 - Should return status 200
-- Receives detailed transaction results
-
-**Example:**
 
 ```bash
 MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/result
@@ -333,93 +276,21 @@ MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/result
 
 ### Timeout URL
 
-**What it is:** URL where M-Pesa sends a notification if a transaction times out.
+URL where M-Pesa sends a notification if a transaction times out.
 
-**When it's called:**
+**When Called**:
 
 - Transaction takes too long to process
 - No response from customer
 - System timeout (usually after 30-60 seconds)
 
-**Example:**
-
 ```bash
 MPESA_TIMEOUT_URL=https://yourdomain.com/api/mpesa/timeout
 ```
 
-## Test Credentials
+## Advanced Client Options
 
-### Sandbox Test Data
-
-Use these credentials for testing in sandbox environment:
-
-```bash
-# Basic Configuration
-MPESA_CONSUMER_KEY=your_sandbox_consumer_key
-MPESA_CONSUMER_SECRET=your_sandbox_consumer_secret
-MPESA_PASSKEY=bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
-MPESA_SHORTCODE=174379
-MPESA_ENVIRONMENT=sandbox
-
-# Callbacks (use ngrok or similar)
-MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok.io/api/mpesa/callback
-
-# For B2C/B2B/Advanced Operations
-MPESA_INITIATOR_NAME=testapi
-MPESA_SECURITY_CREDENTIAL=Safaricom999!*!
-MPESA_RESULT_URL=https://your-ngrok-url.ngrok.io/api/mpesa/result
-MPESA_TIMEOUT_URL=https://your-ngrok-url.ngrok.io/api/mpesa/timeout
-```
-
-### Test Phone Numbers
-
-Use your phone number with an amount of 1 shilling to test.
-The payments are usually refunded hourly
-
-### Testing Different Scenarios
-
-**Success:**
-
-```typescript
-await client.stkPush({
-  amount: 100,
-  phoneNumber: "254712345678", // Will succeed
-  accountReference: "TEST-001",
-  transactionDesc: "Test payment",
-});
-```
-
-**Insufficient Funds:**
-
-```typescript
-// Use amount > 100000 to simulate insufficient funds
-await client.stkPush({
-  amount: 150000,
-  phoneNumber: "254712345678",
-  accountReference: "TEST-002",
-  transactionDesc: "Test insufficient funds",
-});
-```
-
-**User Cancellation:**
-
-```typescript
-// User cancels the prompt
-// Result Code: 1032 (User cancelled)
-```
-
-**Timeout:**
-
-```typescript
-// User doesn't respond
-// Result Code: 1037 (Timeout)
-```
-
-## Advanced Configuration Options
-
-### Client Options
-
-The SDK supports additional configuration options:
+### Complete Configuration with Options
 
 ```typescript
 interface MpesaClientOptions {
@@ -449,46 +320,38 @@ interface MpesaClientOptions {
 }
 ```
 
-### Example with All Options
+### Full Implementation Example
 
 ```typescript
 import { MpesaClient } from "@singularity-payments/core";
 
 const client = new MpesaClient(
   {
-    // Required credentials
     consumerKey: process.env.MPESA_CONSUMER_KEY,
     consumerSecret: process.env.MPESA_CONSUMER_SECRET,
     passkey: process.env.MPESA_PASSKEY,
     shortcode: process.env.MPESA_SHORTCODE,
     environment: "sandbox",
     callbackUrl: process.env.MPESA_CALLBACK_URL,
-
-    // Optional credentials
     initiatorName: process.env.MPESA_INITIATOR_NAME,
     securityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
     resultUrl: process.env.MPESA_RESULT_URL,
     timeoutUrl: process.env.MPESA_TIMEOUT_URL,
   },
   {
-    // Callback handling
     callbackOptions: {
       onSuccess: async (data) => {
         console.log("Payment successful:", data);
-        // Save to database
       },
       onFailure: async (data) => {
         console.log("Payment failed:", data);
-        // Handle failure
       },
-      validateIp: true, // Validate callbacks are from Safaricom
+      validateIp: true,
       isDuplicate: async (checkoutRequestId) => {
-        // Check if already processed
         return false;
       },
     },
 
-    // Retry configuration
     retryOptions: {
       maxRetries: 3,
       initialDelayMs: 1000,
@@ -496,149 +359,109 @@ const client = new MpesaClient(
       backoffMultiplier: 2,
     },
 
-    // Rate limiting
     rateLimitOptions: {
       enabled: true,
       maxRequests: 100,
-      windowMs: 60000, // 100 requests per minute
+      windowMs: 60000,
     },
 
-    // Request timeout
-    requestTimeout: 30000, // 30 seconds
+    requestTimeout: 30000,
   },
 );
 ```
 
-## Environment Variables
+## Testing Different Operations
 
-### Recommended .env Structure
-
-Create a `.env` file in your project root:
-
-```bash
-# =================================
-# M-PESA CONFIGURATION
-# =================================
-
-# Basic Configuration (Required)
-MPESA_CONSUMER_KEY=your_consumer_key
-MPESA_CONSUMER_SECRET=your_consumer_secret
-MPESA_PASSKEY=your_passkey
-MPESA_SHORTCODE=174379
-MPESA_ENVIRONMENT=sandbox
-
-# Callback URLs (Required)
-MPESA_CALLBACK_URL=https://yourdomain.com/api/mpesa/callback
-
-# Advanced Operations (Optional)
-MPESA_INITIATOR_NAME=testapi
-MPESA_SECURITY_CREDENTIAL=your_security_credential
-MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/result
-MPESA_TIMEOUT_URL=https://yourdomain.com/api/mpesa/timeout
-```
-
-### Loading Environment Variables
-
-**Node.js (with dotenv):**
+### STK Push
 
 ```typescript
-import { config } from "dotenv";
-config();
-
-const mpesaConfig = {
-  consumerKey: process.env.MPESA_CONSUMER_KEY!,
-  consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
-  // ... rest of config
-};
+await client.stkPush({
+  amount: 1,
+  phoneNumber: "254712345678",
+  accountReference: "TEST-001",
+  transactionDesc: "Test payment",
+});
 ```
 
-**Next.js:**
+### B2C Payment
 
 ```typescript
-// Environment variables are automatically loaded
-const mpesaConfig = {
-  consumerKey: process.env.MPESA_CONSUMER_KEY!,
-  consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
-  // ... rest of config
-};
+await client.b2c({
+  amount: 100,
+  phoneNumber: "254712345678",
+  commandID: "BusinessPayment",
+  remarks: "Salary payment",
+  occasion: "Monthly",
+});
 ```
 
-**Bun:**
+### B2B Payment
 
 ```typescript
-// Environment variables are automatically loaded
-const mpesaConfig = {
-  consumerKey: process.env.MPESA_CONSUMER_KEY!,
-  consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
-  // ... rest of config
-};
+await client.b2b({
+  amount: 1000,
+  receiverShortcode: "600000",
+  commandID: "BusinessPayBill",
+  remarks: "Payment for goods",
+  accountReference: "INV-001",
+});
 ```
 
-### Security Best Practices
+### Transaction Reversal
 
-1. **Never commit `.env` to version control**
-
-```bash
-   # Add to .gitignore
-   .env
-   .env.local
-   .env.production
+```typescript
+await client.reversal({
+  transactionID: "NEF61H8J60",
+  amount: 100,
+  remarks: "Reversal request",
+  occasion: "Customer refund",
+});
 ```
 
-2. **Use different credentials for each environment**
+### Transaction Status
 
-```bash
-   # .env.development
-   MPESA_ENVIRONMENT=sandbox
-
-   # .env.production
-   MPESA_ENVIRONMENT=production
+```typescript
+await client.transactionStatus({
+  transactionID: "NEF61H8J60",
+  remarks: "Status check",
+  occasion: "Verification",
+});
 ```
 
-3. **Rotate credentials regularly**
-   - Change consumer keys every 90 days
-   - Update security credentials quarterly
+### Account Balance
 
-4. **Use secret management services**
-   - AWS Secrets Manager
-   - Google Cloud Secret Manager
-   - Azure Key Vault
-   - Vercel Environment Variables
-   - Railway Variables
+```typescript
+await client.accountBalance({
+  remarks: "Balance check",
+});
+```
 
 ## Moving to Production
 
-### Checklist
+### Production Checklist
 
-Before going live, ensure:
+- Applied for production access on Safaricom Developer Portal
+- Completed all compliance requirements
+- Received production credentials
+- Generated production security credential
+- Updated all environment variables
+- Changed `environment` to `production`
+- Updated callback URLs to production domains
+- Tested with real phone numbers
+- Implemented proper error handling
+- Set up monitoring and logging
+- Configured rate limiting
+- Implemented duplicate prevention
+- Secured all API keys
 
-- [ ] Applied for production access on Safaricom Developer Portal
-- [ ] Completed all compliance requirements
-- [ ] Received production credentials
-- [ ] Generated production security credential
-- [ ] Updated all environment variables
-- [ ] Changed `environment` to `production`
-- [ ] Updated callback URLs to production domains
-- [ ] Tested with real phone numbers (small amounts)
-- [ ] Implemented proper error handling
-- [ ] Set up monitoring and logging
-- [ ] Configured rate limiting
-- [ ] Implemented duplicate prevention
-- [ ] Secured all API keys
-
-### Production Configuration Example
+### Production Configuration
 
 ```bash
-# =================================
-# M-PESA PRODUCTION CONFIGURATION
-# =================================
-
 MPESA_CONSUMER_KEY=prod_consumer_key_here
 MPESA_CONSUMER_SECRET=prod_consumer_secret_here
 MPESA_PASSKEY=prod_passkey_from_safaricom
-MPESA_SHORTCODE=your_actual_paybill_number
+MPESA_SHORTCODE=your_actual_business_number
 MPESA_ENVIRONMENT=production
-
 MPESA_CALLBACK_URL=https://api.yourdomain.com/api/mpesa/callback
 MPESA_INITIATOR_NAME=your_production_initiator
 MPESA_SECURITY_CREDENTIAL=prod_security_credential_here
@@ -646,34 +469,68 @@ MPESA_RESULT_URL=https://api.yourdomain.com/api/mpesa/result
 MPESA_TIMEOUT_URL=https://api.yourdomain.com/api/mpesa/timeout
 ```
 
+## Security Best Practices
+
+### Environment Variables
+
+Never commit `.env` to version control:
+
+```bash
+.env
+.env.local
+.env.production
+```
+
+### Multiple Environments
+
+```bash
+MPESA_ENVIRONMENT=sandbox
+
+MPESA_ENVIRONMENT=production
+```
+
+### Credential Rotation
+
+- Change consumer keys every 90 days
+- Update security credentials quarterly
+
+### Secret Management Services
+
+- AWS Secrets Manager
+- Google Cloud Secret Manager
+- Azure Key Vault
+- Vercel Environment Variables
+- Railway Variables
+
 ## Common Configuration Issues
 
-### Issue: 401 Unauthorized
+### 401 Unauthorized
 
-**Cause:** Invalid consumer key or consumer secret
+**Cause**: Invalid consumer key or consumer secret
 
-**Solution:**
+**Solution**:
 
 - Verify credentials from developer portal
 - Ensure no extra spaces or quotes in `.env`
-- Check if credentials are for correct environment (sandbox vs production)
+- Check if credentials are for correct environment
 - Regenerate credentials if needed
 
-### Issue: 400 Bad Request - Invalid Shortcode
+### 400 Bad Request - Invalid Shortcode
 
-**Cause:** Using wrong shortcode for environment
+**Cause**: Using wrong shortcode for operation
 
-**Solution:**
+**Solution**:
 
-- Sandbox: Use `174379` or other test shortcodes
+- STK Push: Use `174379`
+- B2C/B2B/Advanced: Use `600998`
 - Production: Use your actual business shortcode
 - Verify shortcode matches your app configuration
 
-### Issue: Callback Not Received
+### Callback Not Received
 
-**Cause:** Callback URL not accessible
+**Cause**: Callback URL not accessible
 
-**Solution:**
+**Solution**:
 
 - Use ngrok or similar for local development
 - Ensure URL is publicly accessible
@@ -681,34 +538,52 @@ MPESA_TIMEOUT_URL=https://api.yourdomain.com/api/mpesa/timeout
 - Verify route is correctly set up
 - Return status 200 from callback endpoint
 
-### Issue: Phone Number Format Error
+### Phone Number Format Error
 
-**Cause:** Incorrect phone number format
+**Cause**: Incorrect phone number format
 
-**Solution:**
+**Solution**:
 
 - Use format: `254XXXXXXXXX` (12 digits)
 - Start with country code `254`
 - Remove spaces, dashes, plus signs
 - Example: `254712345678`
-- Not: `+254 712 345 678`
+
+### Invalid Security Credential
+
+**Cause**: Incorrectly generated or expired security credential
+
+**Solution**:
+
+- Regenerate using Safaricom Developer Portal
+- Ensure using correct initiator password
+- Select correct environment when generating
+- Copy entire credential without modifications
 
 ## Next Steps
 
 <Cards>
-  <Card title="STK Push" href="/api-reference/stk-push">
-    Start accepting payments with STK Push
+  <Card title="B2C Payments" href="b2c">
+    Send money to customer phone numbers
   </Card>
 
-<Card title="Callbacks" href="/api-reference/callbacks">
-  Handle M-Pesa callback notifications
+<Card title="B2B Payments" href="b2b">
+  Transfer money between businesses
 </Card>
 
-<Card title="Error Handling" href="/api-reference/error-handling">
-  Handle errors gracefully
+<Card title="Transaction Reversal" href="reversal">
+  Reverse completed transactions
 </Card>
 
-  <Card title="Integration Guides" href="/integrations">
-    Framework-specific setup guides
+<Card title="Transaction Status" href="transaction-status">
+  Query transaction status
+</Card>
+
+<Card title="Account Balance" href="account-balance">
+  Check your M-Pesa account balance
+</Card>
+
+  <Card title="Error Handling" href="error-handling">
+    Handle errors gracefully
   </Card>
 </Cards>

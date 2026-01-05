@@ -1,5 +1,5 @@
 {
   "title": "Getting Started",
-  "icon": "BookOpen",
-  "pages": ["index", "installation", "quick-start"]
+  "icon": "CirclePlay",
+  "pages": ["index", "installation", "configuration", "quick-start"]
 }

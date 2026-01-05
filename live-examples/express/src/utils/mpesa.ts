@@ -19,6 +19,7 @@ export const mpesa = createMpesa(
   },
   {
     callbackOptions: {
+      validateIp: true,
       onSuccess: async (data) => {
         console.log("Payment successful:", {
           amount: data.amount,

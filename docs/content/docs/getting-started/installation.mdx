@@ -157,15 +157,6 @@ bun add @singularity-payments/fastify
   </Tabs>
 </Tab>
 
-<Tab value="Fastify">
-  <Tabs items={["npm", "pnpm", "yarn", "bun"]}>
-    <Tab value="npm">```bash npm install @singularity-payments/fastify ```</Tab>
-    <Tab value="pnpm">```bash pnpm add @singularity-payments/fastify ```</Tab>
-    <Tab value="yarn">```bash yarn add @singularity-payments/fastify ```</Tab>
-    <Tab value="bun">```bash bun add @singularity-payments/fastify ```</Tab>
-  </Tabs>
-</Tab>
-
   <Tab value="Hono">
     <Tabs items={["npm", "pnpm", "yarn", "bun"]}>
       <Tab value="npm">
@@ -282,8 +273,8 @@ After installation, set up your environment variables:
 ```bash title=".env.local"
 MPESA_CONSUMER_KEY=your_consumer_key
 MPESA_CONSUMER_SECRET=your_consumer_secret
-MPESA_SHORTCODE=your_shortcode
-MPESA_PASSKEY=your_passkey
+MPESA_SHORTCODE=your_shortcode #Use 600998 for sandbox
+MPESA_PASSKEY=your_passkey # Use bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919
 MPESA_ENVIRONMENT=sandbox # or 'production'
 ```
 
