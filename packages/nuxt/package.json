@@ -37,6 +37,11 @@
     "h3": ">=1.0.0",
     "nuxt": ">=3.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/singularityke/singularity-payments-js",
+    "directory": "packages/nuxt"
+  },
   "dependencies": {
     "@singularity-payments/core": "workspace:*"
   },

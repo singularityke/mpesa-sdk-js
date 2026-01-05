@@ -31,6 +31,11 @@
     "kenya"
   ],
   "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/singularityke/singularity-payments-js",
+    "directory": "packages/fastify"
+  },
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.25.0",
   "peerDependencies": {

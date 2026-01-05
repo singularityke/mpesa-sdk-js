@@ -23,6 +23,11 @@
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/singularityke/singularity-payments-js",
+    "directory": "packages/vue"
+  },
   "keywords": [
     "mpesa",
     "vue",

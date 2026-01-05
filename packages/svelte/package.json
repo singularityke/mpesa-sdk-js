@@ -30,6 +30,11 @@
     "payments",
     "kenya"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/singularityke/singularity-payments-js",
+    "directory": "packages/svelte"
+  },
   "license": "Apache-2.0",
   "peerDependencies": {
     "svelte": ">=4.0.0"

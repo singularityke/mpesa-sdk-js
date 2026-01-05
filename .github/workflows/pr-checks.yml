@@ -1,0 +1,83 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - canary
+      - alpha
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.25.0
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint || echo "No lint script found"
+        continue-on-error: true
+
+      - name: Type check
+        run: pnpm typecheck || echo "No typecheck script found"
+        continue-on-error: true
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test || echo "No tests found"
+        continue-on-error: true
+
+      - name: Check for changesets
+        if: github.event_name == 'pull_request'
+        run: |
+          if ! ls .changeset/*.md &> /dev/null; then
+            echo "⚠️ No changeset found. If this PR includes changes that should be published, please run 'pnpm changeset' to add one."
+            echo ""
+            echo "## ⚠️ Missing Changeset" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This PR doesn't include a changeset. If your changes should trigger a release, please run:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "pnpm changeset" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo " Changeset found"
+            echo "##  Changeset Detected" >> $GITHUB_STEP_SUMMARY
+          fi

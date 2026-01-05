@@ -36,6 +36,11 @@
   "peerDependencies": {
     "next": ">=13.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/singularityke/singularity-payments-js",
+    "directory": "packages/nextjs"
+  },
   "dependencies": {
     "@singularity-payments/core": "workspace:*"
   },
