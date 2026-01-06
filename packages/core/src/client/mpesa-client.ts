@@ -588,7 +588,7 @@ export class MpesaClient {
     const phone = this.validateAndFormatPhone(request.phoneNumber);
 
     const payload = {
-      ShortCode: this.config.shortcode,
+      ShortCode: request.shortcode || this.config.shortcode,
       CommandID: request.commandID || "CustomerPayBillOnline",
       Amount: Math.floor(request.amount),
       Msisdn: phone,
