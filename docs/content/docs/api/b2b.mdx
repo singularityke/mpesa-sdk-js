@@ -1,107 +1,98 @@
 ---
 title: B2B Payments
-description: Send money from your business to other businesses using M-Pesa B2B
+description: Send money from your business to businesses using M-Pesa B2B
 ---
 
 ## Overview
 
-B2B (Business to Business) payments allow you to transfer funds from your business M-Pesa account to other business accounts. This is useful for paying suppliers, merchants, or making bulk business payments.
+B2B (Business to Business) payments allow you to send money from your business account to another business account. This is useful for supplier payments, inter-company transfers, and business-to-business transactions.
 
 ## How It Works
 
-1. **Initiate Transfer**: Your application sends a B2B payment request to M-Pesa
-2. **M-Pesa Processes**: M-Pesa validates and processes the payment
-3. **Receive Result**: M-Pesa sends the transaction result to your result URL
-4. **Process Confirmation**: Your application processes the payment confirmation or failure
-
-## Command Types
-
-M-Pesa supports different B2B transaction types:
-
-| Command ID                   | Description                          | Use Case                      |
-| ---------------------------- | ------------------------------------ | ----------------------------- |
-| `BusinessPayBill`            | Pay another business via PayBill     | Paying suppliers with PayBill |
-| `BusinessBuyGoods`           | Pay another business via Till Number | Paying merchants with Till    |
-| `DisburseFundsToBusiness`    | Disburse funds to a business         | Bulk payments, commissions    |
-| `BusinessToBusinessTransfer` | Transfer between business accounts   | Internal transfers            |
-| `MerchantToMerchantTransfer` | Transfer between merchant accounts   | Merchant network transfers    |
-
-## Identifier Types
-
-Used to specify the type of shortcode:
-
-| Type | Description       | Example      |
-| ---- | ----------------- | ------------ |
-| `1`  | MSISDN (Phone)    | 254712345678 |
-| `2`  | Till Number       | 123456       |
-| `4`  | PayBill/Shortcode | 174379       |
+1. **Initiate Payment**: Your application sends a B2B request to M-Pesa
+2. **M-Pesa Processes**: M-Pesa validates and processes the transaction
+3. **Business Receives**: Money is deposited to the receiving business account
+4. **Receive Callback**: M-Pesa sends the result to your callback URL
+5. **Process Result**: Your application processes the payment confirmation
 
 ## Basic Usage
 
-### Server-Side Implementation
+### Server-Side
 
 ```typescript
-import { mpesa } from "@/lib/mpesa";
-
-async function paySupplier() {
-  try {
-    const response = await mpesa.client.b2b({
-      amount: 10000,
-      partyB: "600000", // Receiving business shortcode
-      commandID: "BusinessPayBill",
-      senderIdentifierType: "4", // Your shortcode type
-      receiverIdentifierType: "4", // Receiver shortcode type
-      remarks: "Payment for Invoice INV-2024-001",
-      accountReference: "INV-2024-001",
-    });
-
-    console.log("B2B initiated:", response);
-
-    return {
-      success: true,
-      conversationId: response.ConversationID,
-      originatorConversationId: response.OriginatorConversationID,
-    };
-  } catch (error) {
-    console.error("B2B payment failed:", error);
-    throw error;
-  }
-}
+const response = await mpesa.client.b2b({
+  amount: 5000,
+  partyB: "600998",
+  commandID: "BusinessPayBill",
+  senderIdentifierType: "4",
+  receiverIdentifierType: "4",
+  accountReference: "INV-2024-001",
+  remarks: "Payment for supplies",
+  resultUrl: "https://your-domain.ngrok-free.dev/api/mpesa/b2b-result",
+  timeoutUrl: "https://your-domain.ngrok-free.dev/api/mpesa/b2b-timeout",
+});
 ```
 
-### Response Structure
+The resultUrl and timeoutUrl are required fields. It defaults to the urls in the config but if you are doing more than one type of mpesa transactions on your app, you will have different endpoints to handle each transaction.
+
+#### If you are only doing B2C payments
+
+You can update your env to this
+
+```
+MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/b2b-result
+MPESA_TIMEOUT_URL=https://yourdomain.com/api/mpesa/b2b-timeout
+```
+
+The response will look like this if successful:
 
 ```json
 {
-  "ConversationID": "AG_20240101_00004492b1d6d0c0c0c0",
-  "OriginatorConversationID": "29115-34620561-1",
+  "ConversationID": "AG_20231222_00004e3c6a87f9f8a4e1",
+  "OriginatorConversationID": "12345-67890-1",
   "ResponseCode": "0",
   "ResponseDescription": "Accept the service request successfully."
 }
 ```
 
-## Real-World Example
+## Command IDs
 
-Here's a complete example of paying a supplier with database tracking:
+B2B supports different types of business transfers:
+
+| Command ID                   | Use Case           | Description                                   |
+| ---------------------------- | ------------------ | --------------------------------------------- |
+| `BusinessPayBill`            | Paybill to Paybill | Transfer from your Paybill to another Paybill |
+| `BusinessBuyGoods`           | Paybill to Till    | Transfer from your Paybill to a Till number   |
+| `DisburseFundsToBusiness`    | Utility payments   | Disburse funds to business utility accounts   |
+| `BusinessToBusinessTransfer` | General transfers  | Standard business-to-business transfers       |
+| `MerchantToMerchantTransfer` | Merchant transfers | Between merchant accounts                     |
+
+## Identifier Types
+
+| Type | Description | Usage          |
+| ---- | ----------- | -------------- |
+| `1`  | MSISDN      | Mobile number  |
+| `2`  | Till Number | Buy Goods Till |
+| `4`  | Paybill     | Paybill number |
+
+## Complete Example
 
 ```typescript
 import { db } from "./db";
-import { b2bPayments, suppliers } from "./schema";
+import { payments, suppliers } from "./schema";
 import { eq } from "drizzle-orm";
 import { mpesa } from "@/lib/mpesa";
 
 interface SupplierPaymentRequest {
   supplierId: string;
-  invoiceNumber: string;
+  invoiceId: string;
   amount: number;
-  reason: string;
 }
 
 async function paySupplier(request: SupplierPaymentRequest) {
-  const { supplierId, invoiceNumber, amount, reason } = request;
+  const { supplierId, invoiceId, amount } = request;
 
   try {
-    // 1. Get supplier details from database
     const supplier = await db
       .select()
       .from(suppliers)
@@ -112,70 +103,55 @@ async function paySupplier(request: SupplierPaymentRequest) {
       throw new Error("Supplier not found");
     }
 
-    const { shortcode, name, accountType } = supplier[0];
+    const invoice = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.id, invoiceId))
+      .limit(1);
 
-    // 2. Validate minimum amount
-    if (amount < 10) {
-      throw new Error("Minimum B2B amount is 10 KES");
+    if (invoice.length === 0) {
+      throw new Error("Invoice not found");
     }
 
-    // 3. Initiate B2B payment
+    if (invoice[0].status === "paid") {
+      throw new Error("Invoice already paid");
+    }
+
     const response = await mpesa.client.b2b({
-      amount,
-      partyB: shortcode,
-      commandID:
-        accountType === "paybill" ? "BusinessPayBill" : "BusinessBuyGoods",
-      senderIdentifierType: "4", // Paybill
-      receiverIdentifierType: accountType === "paybill" ? "4" : "2",
-      remarks: `Payment to ${name} - ${reason}`,
-      accountReference: invoiceNumber,
+      amount: Number(amount),
+      partyB: supplier[0].paybillNumber,
+      commandID: "BusinessPayBill",
+      senderIdentifierType: "4",
+      receiverIdentifierType: "4",
+      accountReference: invoice[0].invoiceNumber,
+      remarks: `Payment for invoice ${invoice[0].invoiceNumber}`,
     });
 
-    // 4. Store the payment with pending status
-    const payment = await db.insert(b2bPayments).values({
+    await db.insert(payments).values({
       conversationId: response.ConversationID,
       originatorConversationId: response.OriginatorConversationID,
       supplierId,
-      supplierName: name,
-      invoiceNumber,
+      invoiceId,
       amount,
       status: "pending",
-      remarks: reason,
       createdAt: new Date(),
-    });
-
-    // 5. Log the transaction
-    console.log("B2B payment initiated:", {
-      supplier: name,
-      amount,
-      invoice: invoiceNumber,
-      conversationId: response.ConversationID,
     });
 
     return {
       success: true,
       conversationId: response.ConversationID,
       message: response.ResponseDescription,
-      paymentId: payment.insertId,
     };
   } catch (error) {
     console.error("Supplier payment failed:", error);
     throw error;
   }
 }
-
-// Example usage
-await paySupplier({
-  supplierId: "supplier_123",
-  invoiceNumber: "INV-2024-001",
-  amount: 50000,
-  reason: "Monthly supplies payment",
-});
 ```
 
 ## Handling Callbacks
 
-Configure callback handlers to process B2B results:
+Configure callbacks in your M-Pesa client initialization:
 
 ```typescript
 import { MpesaClient } from "@singularity-payments/nextjs";
@@ -183,104 +159,52 @@ import { MpesaClient } from "@singularity-payments/nextjs";
 const mpesa = new MpesaClient(
   {
     // ... your config
-    resultUrl: "https://yourdomain.com/api/mpesa/b2b/result",
-    timeoutUrl: "https://yourdomain.com/api/mpesa/b2b/timeout",
   },
   {
     callbackOptions: {
-      // Process successful B2B payments
-      onSuccess: async (data) => {
-        const parsed = mpesa.client.getCallbackHandler().parseB2BCallback(data);
-
-        if (parsed.isSuccess) {
-          console.log("B2B payment successful:", {
-            transactionId: parsed.transactionId,
-            amount: parsed.amount,
+      onB2BResult: async (data) => {
+        if (data.isSuccess) {
+          console.log("B2B Payment successful:", {
+            transactionId: data.transactionId,
+            amount: data.amount,
           });
 
-          // Update database
           await db
-            .update(b2bPayments)
+            .update(payments)
             .set({
               status: "completed",
-              transactionId: parsed.transactionId,
+              transactionId: data.transactionId,
               completedAt: new Date(),
+            })
+            .where(eq(payments.conversationId, conversationId));
+
+          await db
+            .update(invoices)
+            .set({
+              status: "paid",
+              paidAt: new Date(),
+            })
+            .where(eq(invoices.id, invoiceId));
+
+          await sendPaymentConfirmation(supplierId, invoiceId);
+        } else {
+          console.log("B2B Payment failed:", data.errorMessage);
+
+          await db
+            .update(payments)
+            .set({
+              status: "failed",
+              errorMessage: data.errorMessage,
               updatedAt: new Date(),
             })
-            .where(eq(b2bPayments.conversationId, data.Result.ConversationID));
+            .where(eq(payments.conversationId, conversationId));
 
-          // Notify relevant parties
-          await notifyAccountsTeam({
-            type: "b2b_success",
-            transactionId: parsed.transactionId,
-            amount: parsed.amount,
-          });
+          await notifyPaymentFailure(supplierId, data.errorMessage);
         }
-      },
-
-      // Handle failures
-      onFailure: async (data) => {
-        const parsed = mpesa.client.getCallbackHandler().parseB2BCallback(data);
-
-        console.log("B2B payment failed:", {
-          reason: parsed.errorMessage,
-          conversationId: data.Result.ConversationID,
-        });
-
-        // Update database
-        await db
-          .update(b2bPayments)
-          .set({
-            status: "failed",
-            errorMessage: parsed.errorMessage,
-            updatedAt: new Date(),
-          })
-          .where(eq(b2bPayments.conversationId, data.Result.ConversationID));
-
-        // Alert finance team
-        await alertFinanceTeam({
-          type: "b2b_failure",
-          conversationId: data.Result.ConversationID,
-          reason: parsed.errorMessage,
-        });
       },
     },
   },
 );
-```
-
-### Callback Data Structure
-
-```typescript
-interface B2BCallback {
-  Result: {
-    ResultType: number;
-    ResultCode: number; // 0 = success
-    ResultDesc: string;
-    OriginatorConversationID: string;
-    ConversationID: string;
-    TransactionID: string;
-    ResultParameters?: {
-      ResultParameter: Array<{
-        Key: string;
-        Value: string | number;
-      }>;
-    };
-  };
-}
-```
-
-### Parsed B2B Callback
-
-The SDK provides a parsed version for easier handling:
-
-```typescript
-interface ParsedB2BCallback {
-  isSuccess: boolean;
-  transactionId?: string; // M-Pesa transaction ID
-  amount?: number; // Transaction amount
-  errorMessage?: string; // Error description if failed
-}
 ```
 
 ## API Reference
@@ -289,571 +213,396 @@ interface ParsedB2BCallback {
 
 ```typescript
 interface B2BRequest {
-  amount: number; // Amount in KES (minimum 1)
-  partyB: string; // Receiving business shortcode
-  commandID: B2BCommandID; // Transaction type
+  amount: number;
+  partyB: string;
+  commandID: B2BCommandID;
   senderIdentifierType: "1" | "2" | "4";
   receiverIdentifierType: "1" | "2" | "4";
-  remarks: string; // Max 100 characters
-  accountReference: string; // Max 13 characters
-  resultUrl?: string; // Override default result URL
-  timeoutUrl?: string; // Override default timeout URL
+  remarks: string;
+  accountReference: string;
+  resultUrl?: string;
+  timeoutUrl?: string;
 }
 ```
 
 #### Parameters
 
-| Parameter                | Type              | Required | Description                                  |
-| ------------------------ | ----------------- | -------- | -------------------------------------------- |
-| `amount`                 | number            | Yes      | Amount in KES. Minimum: 1                    |
-| `partyB`                 | string            | Yes      | Receiving business shortcode/till            |
-| `commandID`              | B2BCommandID      | Yes      | Type of B2B transaction                      |
-| `senderIdentifierType`   | "1" \| "2" \| "4" | Yes      | Your business identifier type                |
-| `receiverIdentifierType` | "1" \| "2" \| "4" | Yes      | Receiver's identifier type                   |
-| `remarks`                | string            | Yes      | Transaction remarks (max 100 chars)          |
-| `accountReference`       | string            | Yes      | Reference like invoice number (max 13 chars) |
-| `resultUrl`              | string            | No       | Custom result URL for this transaction       |
-| `timeoutUrl`             | string            | No       | Custom timeout URL for this transaction      |
+| Parameter                | Type   | Required | Description                                                    |
+| ------------------------ | ------ | -------- | -------------------------------------------------------------- |
+| `amount`                 | number | Yes      | Amount to send in KES. Minimum: 1                              |
+| `partyB`                 | string | Yes      | Receiving business shortcode                                   |
+| `commandID`              | string | Yes      | Type of B2B transfer                                           |
+| `senderIdentifierType`   | string | Yes      | Sender account type: `1` (MSISDN), `2` (Till), `4` (Paybill)   |
+| `receiverIdentifierType` | string | Yes      | Receiver account type: `1` (MSISDN), `2` (Till), `4` (Paybill) |
+| `accountReference`       | string | Yes      | Reference for the transaction. Max 13 characters               |
+| `remarks`                | string | Yes      | Transaction remarks. Max 100 characters                        |
+| `resultUrl`              | string | No       | Override default result callback URL                           |
+| `timeoutUrl`             | string | No       | Override default timeout callback URL                          |
 
 ### B2B Response
 
 ```typescript
 interface B2BResponse {
-  ConversationID: string; // M-Pesa conversation ID
-  OriginatorConversationID: string; // Your unique request ID
-  ResponseCode: string; // "0" = accepted
-  ResponseDescription: string; // Human-readable response
+  ConversationID: string;
+  OriginatorConversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
 }
 ```
 
 #### Response Codes
 
-| Code | Description               | Action                       |
-| ---- | ------------------------- | ---------------------------- |
-| `0`  | Success. Request accepted | Wait for result callback     |
-| `1`  | Rejected                  | Check error message          |
-| `8`  | Invalid credentials       | Verify initiator credentials |
-| `11` | Invalid shortcode         | Check partyB shortcode       |
+| Code           | Description               | Action                                    |
+| -------------- | ------------------------- | ----------------------------------------- |
+| `0`            | Success. Request accepted | Wait for callback                         |
+| `1`            | Rejected                  | Check error message                       |
+| `500.001.1001` | Invalid credentials       | Verify initiator name/security credential |
 
-## Common Use Cases
-
-### 1. Paying Suppliers (PayBill)
+### Callback Data Structure
 
 ```typescript
-async function paySupplierPayBill(invoiceData: InvoiceData) {
-  return await mpesa.client.b2b({
-    amount: invoiceData.amount,
-    partyB: "600000", // Supplier's paybill
-    commandID: "BusinessPayBill",
-    senderIdentifierType: "4",
-    receiverIdentifierType: "4",
-    remarks: `Payment for ${invoiceData.description}`,
-    accountReference: invoiceData.invoiceNumber,
-  });
+interface B2BCallbackData {
+  isSuccess: boolean;
+  transactionId?: string;
+  amount?: number;
+  errorMessage?: string;
 }
 ```
 
-### 2. Paying Merchants (Till Number)
+## Payment Scenarios
+
+### Paybill to Paybill
 
 ```typescript
-async function payMerchantTill(paymentData: PaymentData) {
-  return await mpesa.client.b2b({
-    amount: paymentData.amount,
-    partyB: "123456", // Merchant's till number
-    commandID: "BusinessBuyGoods",
-    senderIdentifierType: "4",
-    receiverIdentifierType: "2", // Till
-    remarks: `Purchase from ${paymentData.merchantName}`,
-    accountReference: paymentData.orderNumber,
-  });
-}
+await mpesa.client.b2b({
+  amount: 10000,
+  partyB: "888888",
+  commandID: "BusinessPayBill",
+  senderIdentifierType: "4",
+  receiverIdentifierType: "4",
+  accountReference: "ACC-12345",
+  remarks: "Monthly subscription",
+});
 ```
 
-### 3. Bulk Disbursements
+### Paybill to Till
 
 ```typescript
-async function disburseFundsToPartners(partners: Partner[]) {
-  const results = [];
-
-  for (const partner of partners) {
-    try {
-      const response = await mpesa.client.b2b({
-        amount: partner.commissionAmount,
-        partyB: partner.shortcode,
-        commandID: "DisburseFundsToBusiness",
-        senderIdentifierType: "4",
-        receiverIdentifierType: "4",
-        remarks: `Commission payment for ${partner.period}`,
-        accountReference: partner.partnerId,
-      });
-
-      results.push({
-        partnerId: partner.partnerId,
-        success: true,
-        conversationId: response.ConversationID,
-      });
-
-      // Rate limiting - wait 1 second between requests
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch (error) {
-      results.push({
-        partnerId: partner.partnerId,
-        success: false,
-        error: error.message,
-      });
-    }
-  }
-
-  return results;
-}
+await mpesa.client.b2b({
+  amount: 5000,
+  partyB: "555555",
+  commandID: "BusinessBuyGoods",
+  senderIdentifierType: "4",
+  receiverIdentifierType: "2",
+  accountReference: "ORDER-789",
+  remarks: "Purchase goods",
+});
 ```
 
-### 4. Internal Business Transfers
+### Utility Payment
 
 ```typescript
-async function transferBetweenAccounts(transferData: TransferData) {
-  return await mpesa.client.b2b({
-    amount: transferData.amount,
-    partyB: transferData.destinationShortcode,
-    commandID: "BusinessToBusinessTransfer",
-    senderIdentifierType: "4",
-    receiverIdentifierType: "4",
-    remarks: `Internal transfer: ${transferData.reason}`,
-    accountReference: transferData.referenceNumber,
-  });
-}
+await mpesa.client.b2b({
+  amount: 2500,
+  partyB: "320320",
+  commandID: "DisburseFundsToBusiness",
+  senderIdentifierType: "4",
+  receiverIdentifierType: "4",
+  accountReference: "UTIL-456",
+  remarks: "Utility payment",
+});
 ```
 
 ## Best Practices
 
-### 1. Validate Business Shortcodes
+### 1. Store Transaction References
 
-Always validate receiver shortcodes before initiating payments:
-
-```typescript
-function validateShortcode(
-  shortcode: string,
-  type: "paybill" | "till",
-): boolean {
-  if (type === "paybill") {
-    // Paybill: 5-7 digits
-    return /^\d{5,7}$/.test(shortcode);
-  } else {
-    // Till: 5-7 digits
-    return /^\d{5,7}$/.test(shortcode);
-  }
-}
-
-// Usage
-if (!validateShortcode(partyB, "paybill")) {
-  throw new Error("Invalid paybill number");
-}
-```
-
-### 2. Store Conversation IDs
-
-Always track both conversation IDs for reconciliation:
+Always store conversation IDs and account references:
 
 ```typescript
 const response = await mpesa.client.b2b({
   /* ... */
 });
 
-await db.b2bTransactions.create({
+await db.payment.create({
   data: {
     conversationId: response.ConversationID,
     originatorConversationId: response.OriginatorConversationID,
+    accountReference: accountReference,
     status: "PENDING",
-    amount: request.amount,
-    // ... other fields
   },
 });
 ```
 
-### 3. Implement Retry Logic
+### 2. Validate Business Accounts
 
-Handle transient failures with exponential backoff:
+Verify recipient business details before payment:
 
 ```typescript
-async function b2bWithRetry(request: B2BRequest, maxRetries = 3) {
-  let lastError;
+async function validateBusinessAccount(paybillNumber: string) {
+  const business = await db.business.findFirst({
+    where: { paybillNumber },
+  });
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await mpesa.client.b2b(request);
-    } catch (error) {
-      lastError = error;
-
-      // Don't retry on validation errors
-      if (error.statusCode === 400) {
-        throw error;
-      }
-
-      // Wait before retry (exponential backoff)
-      if (attempt < maxRetries) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.pow(2, attempt) * 1000),
-        );
-      }
-    }
+  if (!business || !business.verified) {
+    throw new Error("Invalid business account");
   }
 
-  throw lastError;
-}
-```
-
-### 4. Handle Result Codes
-
-Process different outcome scenarios:
-
-```typescript
-callbackOptions: {
-  onCallback: async (data) => {
-    const parsed = mpesa.client.getCallbackHandler().parseB2BCallback(data);
-
-    switch (data.Result.ResultCode) {
-      case 0:
-        // Success
-        await markPaymentComplete(parsed.transactionId);
-        await notifySupplier(parsed);
-        break;
-
-      case 1:
-        // Insufficient funds
-        await flagLowBalance();
-        await notifyFinanceTeam();
-        break;
-
-      case 11:
-        // Invalid receiver
-        await markReceiverInvalid(data.Result.ConversationID);
-        break;
-
-      default:
-        // Other errors
-        await logError(data.Result.ResultDesc);
-    }
-  },
-}
-```
-
-### 5. Reconciliation
-
-Implement daily reconciliation:
-
-```typescript
-async function reconcileB2BPayments(date: Date) {
-  const pendingPayments = await db.b2bPayments.findMany({
-    where: {
-      status: "pending",
-      createdAt: {
-        gte: startOfDay(date),
-        lte: endOfDay(date),
-      },
-    },
-  });
-
-  const report = {
-    total: pendingPayments.length,
-    resolved: 0,
-    stillPending: 0,
-    failed: 0,
-  };
-
-  for (const payment of pendingPayments) {
-    try {
-      // Query transaction status
-      const status = await mpesa.client.transactionStatus({
-        transactionID: payment.conversationId,
-      });
-
-      if (status.ResultCode === "0") {
-        await markPaymentComplete(payment.id);
-        report.resolved++;
-      } else {
-        await markPaymentFailed(payment.id, status.ResultDesc);
-        report.failed++;
-      }
-    } catch (error) {
-      report.stillPending++;
-    }
-  }
-
-  return report;
-}
-```
-
-## Error Handling
-
-### Common Errors
-
-```typescript
-try {
-  await mpesa.client.b2b({
-    /* ... */
-  });
-} catch (error) {
-  if (error.statusCode === 400) {
-    // Validation error
-    console.error("Invalid request:", error.message);
-  } else if (error.statusCode === 401) {
-    // Authentication error
-    console.error("Invalid credentials");
-  } else if (error.statusCode === 500) {
-    // M-Pesa server error - retry
-    console.error("Server error, retrying...");
-  } else {
-    // Network or other error
-    console.error("Unexpected error:", error);
-  }
-}
-```
-
-### Result Code Meanings
-
-| Code | Description         | Action Required            |
-| ---- | ------------------- | -------------------------- |
-| `0`  | Success             | Payment completed          |
-| `1`  | Insufficient funds  | Check account balance      |
-| `8`  | Invalid credentials | Verify security credential |
-| `11` | Invalid receiver    | Verify partyB shortcode    |
-| `17` | System error        | Retry after some time      |
-| `26` | Traffic blocking    | Reduce request rate        |
-
-## Testing
-
-### Sandbox Testing
-
-Use sandbox shortcodes for testing:
-
-```typescript
-// Sandbox configuration
-const mpesa = new MpesaClient({
-  environment: "sandbox",
-  consumerKey: "your_sandbox_key",
-  consumerSecret: "your_sandbox_secret",
-  shortcode: "600000", // Sandbox shortcode
-  initiatorName: "testapi",
-  securityCredential: "your_sandbox_credential",
-  // ...
-});
-
-// Test B2B payment
-const testPayment = await mpesa.client.b2b({
-  amount: 100,
-  partyB: "600000", // Sandbox receiver
-  commandID: "BusinessPayBill",
-  senderIdentifierType: "4",
-  receiverIdentifierType: "4",
-  remarks: "Test payment",
-  accountReference: "TEST001",
-});
-```
-
-### Test Scenarios
-
-```typescript
-describe("B2B Payments", () => {
-  it("should successfully pay a supplier", async () => {
-    const response = await mpesa.client.b2b({
-      amount: 1000,
-      partyB: "600000",
-      commandID: "BusinessPayBill",
-      senderIdentifierType: "4",
-      receiverIdentifierType: "4",
-      remarks: "Test supplier payment",
-      accountReference: "INV-001",
-    });
-
-    expect(response.ResponseCode).toBe("0");
-    expect(response.ConversationID).toBeDefined();
-  });
-
-  it("should reject invalid amounts", async () => {
-    await expect(
-      mpesa.client.b2b({
-        amount: 0, // Invalid
-        partyB: "600000",
-        commandID: "BusinessPayBill",
-        senderIdentifierType: "4",
-        receiverIdentifierType: "4",
-        remarks: "Test",
-        accountReference: "TEST",
-      }),
-    ).rejects.toThrow("B2B amount must be greater than 0");
-  });
-});
-```
-
-## Troubleshooting
-
-### "Invalid Security Credential"
-
-**Cause**: Incorrect or malformed security credential
-
-**Solution**:
-
-```bash
-# Regenerate security credential from Safaricom portal
-# Ensure it's properly encrypted with the initiator password
-```
-
-### "Insufficient Balance"
-
-**Cause**: Source account doesn't have enough funds
-
-**Solution**:
-
-- Check account balance using Account Balance API
-- Top up M-Pesa account
-- Adjust payment amounts
-
-### Callback Not Received
-
-**Solutions**:
-
-1. Verify result URL is publicly accessible
-2. Check firewall allows Safaricom IPs
-3. Ensure HTTPS is properly configured
-4. Test with ngrok in development
-
-```bash
-# Use ngrok for local testing
-ngrok http 3000
-
-# Update result URL
-resultUrl: "https://your-ngrok-url.ngrok.io/api/mpesa/b2b/result"
-```
-
-### "Invalid Receiver Party"
-
-**Cause**: PartyB shortcode doesn't exist or is invalid
-
-**Solution**:
-
-- Verify shortcode with the receiving business
-- Check identifier type matches (Till vs PayBill)
-- Ensure shortcode is active
-
-## Security Considerations
-
-### 1. Protect Credentials
-
-```typescript
-// ✅ Good: Use environment variables
-const mpesa = new MpesaClient({
-  initiatorName: process.env.MPESA_INITIATOR_NAME,
-  securityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
-  // ...
-});
-
-// ❌ Bad: Hardcode credentials
-const mpesa = new MpesaClient({
-  initiatorName: "myinitiator",
-  securityCredential: "hardcoded_credential",
-  // ...
-});
-```
-
-### 2. Validate Callbacks
-
-```typescript
-callbackOptions: {
-  validateIp: true, // Always validate in production
-  allowedIps: [
-    "196.201.214.200",
-    "196.201.214.206",
-    // ... Safaricom IPs
-  ],
+  return business;
 }
 ```
 
 ### 3. Implement Approval Workflow
 
-For large amounts, require approval:
+Add multi-level approval for B2B payments:
 
 ```typescript
-async function initiateB2BPayment(request: B2BRequest, userId: string) {
-  // Require approval for amounts over 100,000 KES
-  if (request.amount > 100000) {
-    await db.pendingApprovals.create({
-      data: {
-        type: "b2b_payment",
-        amount: request.amount,
-        requesterId: userId,
-        status: "pending",
-        data: request,
-      },
+async function initiateB2BPayment(request: B2BPaymentRequest) {
+  if (request.amount > 50000) {
+    await createApprovalRequest({
+      type: "B2B",
+      amount: request.amount,
+      recipient: request.partyB,
+      requiredApprovers: 2,
     });
-
-    await notifyApprovers(request);
-
-    return {
-      requiresApproval: true,
-      message: "Payment requires approval",
-    };
+    return { status: "pending_approval" };
   }
 
-  // Process immediately for smaller amounts
+  return await processB2BPayment(request);
+}
+```
+
+### 4. Handle Reconciliation
+
+Track payments for accounting reconciliation:
+
+```typescript
+callbackOptions: {
+  onB2BResult: async (data) => {
+    if (data.isSuccess) {
+      await db.reconciliation.create({
+        data: {
+          transactionId: data.transactionId,
+          amount: data.amount,
+          type: "B2B",
+          status: "completed",
+          reconciled: false,
+        },
+      });
+    }
+  },
+}
+```
+
+### 5. Monitor Failed Transactions
+
+Track and retry failed B2B payments:
+
+```typescript
+async function retryFailedPayments() {
+  const failed = await db.payment.findMany({
+    where: {
+      status: "failed",
+      retryCount: { lt: 3 },
+    },
+  });
+
+  for (const payment of failed) {
+    try {
+      await processB2BPayment(payment);
+      await db.payment.update({
+        where: { id: payment.id },
+        data: { retryCount: payment.retryCount + 1 },
+      });
+    } catch (error) {
+      console.error(`Retry failed for payment ${payment.id}`);
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### "Invalid Initiator"
+
+**Cause**: Incorrect initiator name or security credential
+
+**Solution**:
+
+```typescript
+// Verify credentials in M-Pesa configuration
+const mpesa = new MpesaClient({
+  initiatorName: "CORRECT_INITIATOR_NAME",
+  securityCredential: "CORRECT_SECURITY_CREDENTIAL",
+  // ... other config
+});
+```
+
+### "Invalid ShortCode"
+
+**Cause**: PartyB shortcode is incorrect or not registered
+
+**Solution**:
+
+```typescript
+// Validate shortcode format
+function isValidShortcode(shortcode: string): boolean {
+  return /^\d{6,7}$/.test(shortcode);
+}
+
+// Verify with supplier database
+const supplier = await db.supplier.findFirst({
+  where: { paybillNumber: partyB },
+});
+```
+
+### "Insufficient Balance"
+
+**Cause**: Business account has insufficient funds
+
+**Solution**:
+
+```typescript
+const balance = await mpesa.client.accountBalance();
+
+if (balance.availableBalance < amount) {
+  throw new Error("Insufficient balance for B2B transfer");
+}
+```
+
+### Callback Not Received
+
+**Causes**:
+
+1. Result URL not publicly accessible
+2. Firewall blocking Safaricom IPs
+3. Route not properly configured
+
+**Solutions**:
+
+```bash
+# 1. Use ngrok for local development
+ngrok http 3000
+
+# 2. Verify routes exist
+# app/api/mpesa/b2b-result/route.ts
+# app/api/mpesa/b2b-timeout/route.ts
+
+# 3. Allow Safaricom IPs
+# 196.201.214.200, 196.201.214.206, etc.
+```
+
+### "Transaction Failed"
+
+**Cause**: Receiver account not configured for B2B
+
+**Solution**:
+
+```typescript
+// Ensure receiver has enabled B2B on their account
+// Contact receiver to verify B2B settings
+// Use correct identifier types for the transaction
+```
+
+## Security Considerations
+
+### 1. Validate Callback IP
+
+Always validate callbacks are from Safaricom:
+
+```typescript
+callbackOptions: {
+  validateIp: true,
+}
+```
+
+### 2. Implement Transaction Limits
+
+Set maximum transaction amounts:
+
+```typescript
+const MAX_B2B_AMOUNT = 1000000;
+
+async function processB2BPayment(request: B2BPaymentRequest) {
+  if (request.amount > MAX_B2B_AMOUNT) {
+    throw new Error(`Amount exceeds maximum limit of ${MAX_B2B_AMOUNT}`);
+  }
+
   return await mpesa.client.b2b(request);
 }
 ```
 
-## Rate Limits
+### 3. Audit Trail
 
-M-Pesa enforces rate limits on B2B requests:
-
-- **Default**: ~100 requests per minute
-- **Sandbox**: Lower limits may apply
-
-### Handle Rate Limiting
+Maintain comprehensive audit logs:
 
 ```typescript
-import { setTimeout } from "timers/promises";
+await db.auditLog.create({
+  data: {
+    action: "B2B_PAYMENT",
+    userId: userId,
+    amount: amount,
+    recipient: partyB,
+    status: "initiated",
+    timestamp: new Date(),
+  },
+});
+```
 
-async function processB2BPayments(payments: Payment[]) {
+### 4. Duplicate Prevention
+
+Prevent duplicate payments:
+
+```typescript
+async function isDuplicatePayment(
+  invoiceId: string,
+  amount: number,
+): Promise<boolean> {
+  const existing = await db.payment.findFirst({
+    where: {
+      invoiceId,
+      amount,
+      status: { in: ["pending", "completed"] },
+    },
+  });
+
+  return !!existing;
+}
+```
+
+### 5. Rate Limiting
+
+Protect against abuse:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: 30,
+    windowMs: 60000,
+  },
+});
+```
+
+## Batch Processing
+
+Process multiple B2B payments efficiently:
+
+```typescript
+async function processBatchPayments(payments: B2BPaymentRequest[]) {
   const results = [];
 
-  for (let i = 0; i < payments.length; i++) {
+  for (const payment of payments) {
     try {
-      const result = await mpesa.client.b2b(payments[i]);
-      results.push({ success: true, result });
+      const result = await mpesa.client.b2b(payment);
+      results.push({ success: true, data: result });
 
-      // Wait 1 second between requests (60 per minute max)
-      if (i < payments.length - 1) {
-        await setTimeout(1000);
-      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
-      if (error.statusCode === 429) {
-        // Rate limited - wait longer
-        await setTimeout(5000);
-        i--; // Retry this payment
-      } else {
-        results.push({ success: false, error: error.message });
-      }
+      results.push({ success: false, error: error.message });
     }
   }
 
   return results;
 }
 ```
-
-## Next Steps
-
-<Cards>
-  <Card title="B2C Payments" href="/api-reference/b2c">
-    Send money to customers
-  </Card>
-
-<Card title="Transaction Status" href="/api-reference/transaction-status">
-  Query payment status
-</Card>
-
-<Card title="Account Balance" href="/api-reference/account-balance">
-  Check your M-Pesa balance
-</Card>
-
-  <Card title="Callbacks" href="/api-reference/callbacks">
-    Handle M-Pesa callbacks
-  </Card>
-</Cards>

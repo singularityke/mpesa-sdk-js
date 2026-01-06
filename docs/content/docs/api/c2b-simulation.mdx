@@ -32,6 +32,7 @@ const response = await mpesaClient.simulateC2B({
 
 ```typescript
 const response = await mpesa.client.simulateC2B({
+  // shortcode: "600998", // You can optionally use a shortcode but it will use what is in the config by default
   amount: 100,
   phoneNumber: "254712345678",
   billRefNumber: "INV-001",
@@ -282,62 +283,6 @@ interface C2BCallback {
   FirstName?: string;
   MiddleName?: string;
   LastName?: string;
-}
-```
-
-## Registering C2B URLs
-
-Before using C2B, you must register your validation and confirmation URLs with M-Pesa.
-
-### Server Side
-
-```typescript
-const response = await mpesa.client.registerC2BUrl({
-  shortCode: "600000",
-  responseType: "Completed",
-  confirmationURL: "https://yourdomain.com/api/mpesa/c2b-confirmation",
-  validationURL: "https://yourdomain.com/api/mpesa/c2b-validation",
-});
-```
-
-### Client Side
-
-```typescript
-const { data, error } = await mpesaClient.registerC2B({
-  shortCode: "600000",
-  responseType: "Completed",
-  confirmationURL: "https://yourdomain.com/api/mpesa/c2b-confirmation",
-  validationURL: "https://yourdomain.com/api/mpesa/c2b-validation",
-});
-```
-
-### Register Request
-
-```typescript
-interface C2BRegisterRequest {
-  shortCode: string;
-  responseType: "Completed" | "Cancelled";
-  confirmationURL: string;
-  validationURL: string;
-}
-```
-
-#### Parameters
-
-| Parameter         | Type   | Required | Description                                    |
-| ----------------- | ------ | -------- | ---------------------------------------------- |
-| `shortCode`       | string | Yes      | Your paybill or till number                    |
-| `responseType`    | string | Yes      | When to send confirmation: Completed/Cancelled |
-| `confirmationURL` | string | Yes      | URL to receive payment confirmations           |
-| `validationURL`   | string | Yes      | URL to validate payments before processing     |
-
-### Register Response
-
-```typescript
-interface C2BRegisterResponse {
-  OriginatorCoversationID: string;
-  ResponseCode: string;
-  ResponseDescription: string;
 }
 ```
 

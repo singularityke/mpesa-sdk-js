@@ -49,11 +49,17 @@ export interface CallbackHandlerOptions {
     charges?: number;
     errorMessage?: string;
   }) => void | Promise<void>;
-
   onB2BResult?: (data: {
     isSuccess: boolean;
     transactionId?: string;
     amount?: number;
+    conversationId?: string;
+    originatorConversationId?: string;
+    debitAccountBalance?: string;
+    debitPartyAffectedAccountBalance?: string;
+    transactionCompletedTime?: string;
+    receiverPartyPublicName?: string;
+    currency?: string;
     errorMessage?: string;
   }) => void | Promise<void>;
 
@@ -373,6 +379,7 @@ export class MpesaCallbackHandler {
 
     return parsed;
   }
+
   /**
    * Parse B2B callback
    */
@@ -380,11 +387,21 @@ export class MpesaCallbackHandler {
     isSuccess: boolean;
     transactionId?: string;
     amount?: number;
+    conversationId?: string;
+    originatorConversationId?: string;
+    debitAccountBalance?: string;
+    debitPartyAffectedAccountBalance?: string;
+    transactionCompletedTime?: string;
+    receiverPartyPublicName?: string;
+    currency?: string;
     errorMessage?: string;
   } {
     const result = callback.Result;
     const parsed: any = {
       isSuccess: result.ResultCode === 0,
+      transactionId: result.TransactionID,
+      conversationId: result.ConversationID,
+      originatorConversationId: result.OriginatorConversationID,
       errorMessage:
         result.ResultCode !== 0
           ? this.getErrorMessage(result.ResultCode)
@@ -394,11 +411,23 @@ export class MpesaCallbackHandler {
     if (result.ResultCode === 0 && result.ResultParameters) {
       result.ResultParameters.ResultParameter.forEach((param) => {
         switch (param.Key) {
-          case "TransactionReceipt":
-            parsed.transactionId = String(param.Value);
-            break;
-          case "TransactionAmount":
+          case "Amount":
             parsed.amount = Number(param.Value);
+            break;
+          case "DebitAccountBalance":
+            parsed.debitAccountBalance = String(param.Value);
+            break;
+          case "DebitPartyAffectedAccountBalance":
+            parsed.debitPartyAffectedAccountBalance = String(param.Value);
+            break;
+          case "TransCompletedTime":
+            parsed.transactionCompletedTime = String(param.Value);
+            break;
+          case "ReceiverPartyPublicName":
+            parsed.receiverPartyPublicName = String(param.Value);
+            break;
+          case "Currency":
+            parsed.currency = String(param.Value);
             break;
         }
       });
