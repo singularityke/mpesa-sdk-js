@@ -1,5 +1,13 @@
 # @singularity-payments/fastify
 
+## 1.2.3
+
+### Patch Changes
+
+- Version uploaded
+- Updated dependencies
+  - @singularity-payments/core@1.3.2
+
 ## 1.2.2
 
 ### Patch Changes
