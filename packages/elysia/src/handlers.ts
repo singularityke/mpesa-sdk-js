@@ -68,7 +68,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
     },
     simulateC2B: async (ctx: Context) => {
       try {
-        const { shortcode, amount, phoneNumber, billRefNumber, commandID } =
+        const { shortCode, amount, phoneNumber, billRefNumber, commandID } =
           ctx.body as C2BSimulateRequest;
 
         if (!amount || !phoneNumber || !billRefNumber) {
@@ -80,7 +80,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaRouteHandlers {
         }
 
         const response = await client.simulateC2B({
-          shortcode: String(shortcode),
+          shortCode: String(shortCode),
           amount: Number(amount),
           phoneNumber: String(phoneNumber),
           billRefNumber: String(billRefNumber),
