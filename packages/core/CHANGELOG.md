@@ -1,5 +1,12 @@
 # @singularity-payments/core
 
+## 1.3.1
+
+### Patch Changes
+
+- e0da7a1: Updating versions
+- 35db9c0: Fix on the B2B Callback Structure
+
 ## 1.3.0
 
 ### Minor Changes

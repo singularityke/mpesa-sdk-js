@@ -1,5 +1,15 @@
 # @singularity-payments/sveltekit
 
+## 1.2.2
+
+### Patch Changes
+
+- e0da7a1: Updating versions
+- 35db9c0: Fix on the B2B Callback Structure
+- Updated dependencies [e0da7a1]
+- Updated dependencies [35db9c0]
+  - @singularity-payments/core@1.3.1
+
 ## 1.2.1
 
 ### Patch Changes
