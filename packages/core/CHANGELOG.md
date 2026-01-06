@@ -1,5 +1,16 @@
 # @singularity-payments/core
 
+## 1.3.0
+
+### Minor Changes
+
+- 2931f75: Adding shortcode to the simulate Request
+- b96cdad: Updates for the Shortcode and Versioning
+
+### Patch Changes
+
+- a20c4a1: Updating shortcode across all packages
+
 ## 1.2.0
 
 ### Minor Changes

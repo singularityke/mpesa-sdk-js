@@ -1,5 +1,17 @@
 # @singularity-payments/vue
 
+## 1.2.1
+
+### Patch Changes
+
+- a20c4a1: Updating shortcode across all packages
+- 2931f75: Adding shortcode to the simulate Request
+- b96cdad: Updates for the Shortcode and Versioning
+- Updated dependencies [a20c4a1]
+- Updated dependencies [2931f75]
+- Updated dependencies [b96cdad]
+  - @singularity-payments/core@1.3.0
+
 ## 1.2.0
 
 ### Minor Changes

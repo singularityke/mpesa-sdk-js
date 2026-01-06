@@ -13,4 +13,4 @@
 "docs": patch
 ---
 
-Updating shortcode across all packages
+Updating versions
