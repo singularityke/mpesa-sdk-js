@@ -5,138 +5,123 @@ description: Send money from your business to customers using M-Pesa B2C
 
 ## Overview
 
-B2C (Business to Customer) allows you to send money directly from your business M-Pesa account to your customers' phones. This is useful for salary payments, promotional rewards, refunds, and other business payouts.
+B2C (Business to Customer) payments allow you to send money from your business account directly to customer M-Pesa accounts. This is useful for salary payments, refunds, promotions, and other disbursements.
 
 ## How It Works
 
 1. **Initiate Payment**: Your application sends a B2C request to M-Pesa
-2. **M-Pesa Processes**: M-Pesa validates and processes the payment
-3. **Customer Receives Money**: Customer gets money directly in their M-Pesa account
-4. **Receive Callback**: M-Pesa sends the transaction result to your callback URL
+2. **M-Pesa Processes**: M-Pesa validates and processes the transaction
+3. **Customer Receives**: Money is deposited directly to customer's M-Pesa account
+4. **Receive Callback**: M-Pesa sends the result to your callback URL
 5. **Process Result**: Your application processes the payment confirmation
 
-## Command Types
-
-B2C supports three types of payments:
-
-| Command Type       | Description                   | Use Case                          |
-| ------------------ | ----------------------------- | --------------------------------- |
-| `BusinessPayment`  | General business payments     | Refunds, rewards, general payouts |
-| `SalaryPayment`    | Employee salary disbursements | Payroll processing                |
-| `PromotionPayment` | Promotional rewards           | Customer rewards, cashback        |
-
 ## Basic Usage
+
+### env
+
+```
+MPESA_SHORTCODE=600998 # This worked for me for sandbox, for production replace with your shortcode
+
+```
 
 ### Server-Side
 
 ```typescript
 const response = await mpesa.client.b2c({
-  amount: 100,
+  amount: 1000,
   phoneNumber: "254712345678",
   commandID: "BusinessPayment",
-  remarks: "Refund for order #12345",
-  occasion: "Order cancellation refund",
+  remarks: "Salary payment for January",
+  occasion: "Payroll",
+  resultUrl: "https://yourdomain.com/api/mpesa/b2c-result",
+  timeoutUrl: "https://yourdomain.com/api/mpesa/b2c-timeout",
 });
 ```
 
-### Client-Side
+The resultUrl and timeoutUrl are required fields. It defaults to the urls in the config but if you are doing more than one type of mpesa transactions on your app, you will have different endpoints to handle each transaction.
 
-```typescript
-const response = await mpesaClient.b2c({
-  amount: 100,
-  phoneNumber: "254712345678",
-  commandID: "BusinessPayment",
-  remarks: "Refund for order #12345",
-  occasion: "Order cancellation refund",
-});
+#### If you are only doing B2C payments
+
+You can update your env to this
+
+```
+MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/b2c-result
+MPESA_TIMEOUT_URL=https://yourdomain.com/api/mpesa/b2c-timeout
 ```
 
-The Response will look like this if successful:
+The response will look like this if successful:
 
 ```json
 {
-  "ConversationID": "AG_20251231_00004e9b3e3e3e3e3e3e",
-  "OriginatorConversationID": "9e2d-4d13-b15f-cbf9a0b7e00f10096",
+  "ConversationID": "AG_20231222_00004e3c6a87f9f8a4e1",
+  "OriginatorConversationID": "12345-67890-1",
   "ResponseCode": "0",
   "ResponseDescription": "Accept the service request successfully."
 }
 ```
 
-## Real-World Example
+## Command IDs
 
-In a real application, you might want to track B2C transactions in your database and handle various scenarios like refunds or payroll:
+B2C supports three types of payments:
+
+| Command ID         | Use Case             | Description                             |
+| ------------------ | -------------------- | --------------------------------------- |
+| `BusinessPayment`  | General payments     | Standard business payments like refunds |
+| `SalaryPayment`    | Salary disbursements | Employee salary payments                |
+| `PromotionPayment` | Promotional offers   | Marketing promotions and rewards        |
+
+It is important that they are accurate as they are subject to different taxation. For example, salary payments are subject to PAYE (Pay As You Earn) tax, while promotional payments are not.
+
+## Complete Example
 
 ```typescript
 import { db } from "./db";
-import { b2cTransactions, refunds } from "./schema";
+import { disbursements } from "./schema";
 import { eq } from "drizzle-orm";
 import { mpesa } from "@/lib/mpesa";
 
-interface RefundRequest {
-  orderId: string;
-  customerId: string;
+interface DisbursementRequest {
+  userId: string;
+  amount: number;
+  phoneNumber: string;
   reason: string;
 }
 
-async function processRefund(request: RefundRequest) {
-  const { orderId, customerId, reason } = request;
+async function processDisbursement(request: DisbursementRequest) {
+  const { userId, amount, phoneNumber, reason } = request;
 
   try {
-    // 1. Get order and customer details from database
-    const order = await db
+    // 1. Validate user and amount
+    const user = await db
       .select()
-      .from(orders)
-      .where(eq(orders.id, orderId))
+      .from(users)
+      .where(eq(users.id, userId))
       .limit(1);
 
-    if (order.length === 0) {
-      throw new Error("Order not found");
+    if (user.length === 0) {
+      throw new Error("User not found");
     }
 
-    const customer = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.id, customerId))
-      .limit(1);
-
-    if (customer.length === 0) {
-      throw new Error("Customer not found");
-    }
-
-    const amount = order[0].amount;
-    const phoneNumber = customer[0].phoneNumber;
-
-    // 2. Initiate M-Pesa B2C Payment
+    // 2. Initiate B2C payment
     const response = await mpesa.client.b2c({
       amount: Number(amount),
       phoneNumber,
       commandID: "BusinessPayment",
-      remarks: `Refund for order ${orderId}`,
-      occasion: reason,
+      remarks: reason,
+      occasion: `Disbursement-${userId}`,
     });
 
-    // 3. Store the B2C transaction with pending status
-    await db.insert(b2cTransactions).values({
+    // 3. Store the disbursement with pending status
+    await db.insert(disbursements).values({
       conversationId: response.ConversationID,
       originatorConversationId: response.OriginatorConversationID,
-      orderId,
-      customerId,
+      userId,
       phoneNumber,
       amount,
-      commandID: "BusinessPayment",
+      reason,
       status: "pending",
-      remarks: `Refund for order ${orderId}`,
       createdAt: new Date(),
     });
-
-    // 4. Update order status
-    await db
-      .update(orders)
-      .set({
-        status: "refund_pending",
-        updatedAt: new Date(),
-      })
-      .where(eq(orders.id, orderId));
 
     return {
       success: true,
@@ -144,138 +129,18 @@ async function processRefund(request: RefundRequest) {
       message: response.ResponseDescription,
     };
   } catch (error) {
-    console.error("Refund failed:", error);
+    console.error("Disbursement failed:", error);
     throw error;
   }
 }
 ```
 
-### Handling B2C Callbacks
-
-Then in the callback options, update based on the ConversationID to show whether the payment was successful or failed:
-
-```typescript
-callbackOptions = {
-  onB2CResult: async (data) => {
-    if (data.isSuccess) {
-      console.log("B2C Payment successful:", {
-        transactionId: data.transactionId,
-        amount: data.amount,
-        recipientPhone: data.recipientPhone,
-        charges: data.charges,
-      });
-
-      await db
-        .update(b2cTransactions)
-        .set({
-          status: "completed",
-          transactionId: data.transactionId,
-          charges: data.charges,
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(b2cTransactions.conversationId, data.conversationId));
-
-      // Update related order status
-      await db
-        .update(orders)
-        .set({
-          status: "refunded",
-          updatedAt: new Date(),
-        })
-        .where(eq(orders.id, transaction.orderId));
-    } else {
-      console.log("B2C Payment failed:", {
-        errorMessage: data.errorMessage,
-      });
-
-      await db
-        .update(b2cTransactions)
-        .set({
-          status: "failed",
-          errorMessage: data.errorMessage,
-          updatedAt: new Date(),
-        })
-        .where(eq(b2cTransactions.conversationId, data.conversationId));
-    }
-  },
-};
-```
-
-## API Reference
-
-### B2C Request
-
-```typescript
-interface B2CRequest {
-  amount: number; // Amount in KES (minimum 10)
-  phoneNumber: string; // Format: 254XXXXXXXXX
-  commandID: "BusinessPayment" | "SalaryPayment" | "PromotionPayment";
-  remarks: string; // Max 100 characters
-  occasion?: string; // Optional occasion
-  resultUrl?: string; // Optional: Override default result URL
-  timeoutUrl?: string; // Optional: Override default timeout URL
-}
-```
-
-#### Parameters
-
-| Parameter     | Type   | Required | Description                                                                |
-| ------------- | ------ | -------- | -------------------------------------------------------------------------- |
-| `amount`      | number | Yes      | Payment amount in KES. Minimum: 10                                         |
-| `phoneNumber` | string | Yes      | Customer's phone number. Format: `254XXXXXXXXX`                            |
-| `commandID`   | string | Yes      | Type of payment: `BusinessPayment`, `SalaryPayment`, or `PromotionPayment` |
-| `remarks`     | string | Yes      | Transaction remarks (1-100 characters)                                     |
-| `occasion`    | string | No       | Optional occasion for the payment                                          |
-| `resultUrl`   | string | No       | Override the default result callback URL                                   |
-| `timeoutUrl`  | string | No       | Override the default timeout callback URL                                  |
-
-The SDK automatically formats phone numbers, but the recommended format is:
-
-```typescript
-// ✅ Recommended formats
-"254712345678"; // With country code
-"0712345678"; // Will be converted to 254712345678
-"712345678"; // Will be converted to 254712345678
-"+254712345678"; // Will be converted to 254712345678
-
-// ❌ Invalid formats
-"+254 712 345 678"; // Will be cleaned but avoid spaces
-"712-345-678"; // Will be cleaned but avoid dashes
-```
-
-### B2C Response
-
-```typescript
-interface B2CResponse {
-  ConversationID: string; // M-Pesa generated conversation ID
-  OriginatorConversationID: string; // Your unique conversation ID
-  ResponseCode: string; // "0" = success
-  ResponseDescription: string; // Human-readable response
-}
-```
-
-#### Response Codes
-
-| Code           | Description               | Action                                    |
-| -------------- | ------------------------- | ----------------------------------------- |
-| `0`            | Success. Request accepted | Wait for callback with final result       |
-| `1`            | Rejected                  | Check error message and retry             |
-| `500.001.1001` | Invalid credentials       | Verify initiator name/security credential |
-| `400.008.02`   | Invalid account           | Check shortcode configuration             |
-
 ## Handling Callbacks
 
-The default configuration already handles callbacks using a catch-all route.
-
-<Card title="Callback Configuration" href="/integrations">
-  Default configuration already handles B2C callbacks
-</Card>
-
-### Process Callbacks in Your Application
+Configure callbacks in your M-Pesa client initialization:
 
 ```typescript
-import { MpesaClient } from "@singularity-payments/nextjs"; // change to the framework you are using
+import { MpesaClient } from "@singularity-payments/nextjs";
 
 const mpesa = new MpesaClient(
   {
@@ -283,7 +148,6 @@ const mpesa = new MpesaClient(
   },
   {
     callbackOptions: {
-      // Called when B2C payment completes (success or failure)
       onB2CResult: async (data) => {
         if (data.isSuccess) {
           console.log("B2C Payment successful:", {
@@ -293,55 +157,94 @@ const mpesa = new MpesaClient(
             charges: data.charges,
           });
 
-          // Update your database
-          await db.b2cTransactions.update({
-            where: { conversationId: data.conversationId },
-            data: {
+          // Update database
+          await db
+            .update(disbursements)
+            .set({
               status: "completed",
               transactionId: data.transactionId,
-              charges: data.charges,
               completedAt: new Date(),
-            },
-          });
+            })
+            .where(eq(disbursements.conversationId, conversationId));
 
-          // Send confirmation notification
-          await sendNotification(data.recipientPhone, "Payment received!");
+          // Send notification
+          await sendNotification(data.recipientPhone, data.amount);
         } else {
-          console.log("B2C Payment failed:", {
-            errorMessage: data.errorMessage,
-          });
+          console.log("B2C Payment failed:", data.errorMessage);
 
-          // Update your database
-          await db.b2cTransactions.update({
-            where: { conversationId: data.conversationId },
-            data: {
+          // Update database
+          await db
+            .update(disbursements)
+            .set({
               status: "failed",
               errorMessage: data.errorMessage,
-            },
-          });
-
-          // Notify support team
-          await notifySupport("B2C payment failed", data);
+              updatedAt: new Date(),
+            })
+            .where(eq(disbursements.conversationId, conversationId));
         }
       },
-
-      // Validate IP (recommended for production)
-      validateIp: true,
     },
   },
 );
 ```
+
+## API Reference
+
+### B2C Request
+
+```typescript
+interface B2CRequest {
+  amount: number;
+  phoneNumber: string;
+  commandID: B2CCommandID;
+  remarks: string;
+  occasion?: string;
+  resultUrl?: string;
+  timeoutUrl?: string;
+}
+```
+
+#### Parameters
+
+| Parameter     | Type   | Required | Description                                                                |
+| ------------- | ------ | -------- | -------------------------------------------------------------------------- |
+| `amount`      | number | Yes      | Amount to send in KES. Minimum: 10                                         |
+| `phoneNumber` | string | Yes      | Recipient's phone number. Format: `254XXXXXXXXX`                           |
+| `commandID`   | string | Yes      | Type of payment: `BusinessPayment`, `SalaryPayment`, or `PromotionPayment` |
+| `remarks`     | string | Yes      | Transaction remarks. Max 100 characters                                    |
+| `occasion`    | string | No       | Optional additional information                                            |
+| `resultUrl`   | string | No       | Override default result callback URL                                       |
+| `timeoutUrl`  | string | No       | Override default timeout callback URL                                      |
+
+### B2C Response
+
+```typescript
+interface B2CResponse {
+  ConversationID: string;
+  OriginatorConversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
+}
+```
+
+#### Response Codes
+
+| Code           | Description               | Action                                    |
+| -------------- | ------------------------- | ----------------------------------------- |
+| `0`            | Success. Request accepted | Wait for callback                         |
+| `1`            | Rejected                  | Check error message                       |
+| `500.001.1001` | Invalid credentials       | Verify initiator name/security credential |
 
 ### Callback Data Structure
 
 ```typescript
 interface B2CCallbackData {
   isSuccess: boolean;
-  transactionId?: string; // M-Pesa receipt number (only on success)
-  amount?: number; // Transaction amount (only on success)
-  recipientPhone?: string; // Recipient phone number (only on success)
-  charges?: number; // Transaction charges (only on success)
-  errorMessage?: string; // Error description (only on failure)
+  transactionId?: string;
+  amount?: number;
+  recipientPhone?: string;
+  charges?: number;
+  errorMessage?: string;
 }
 ```
 
@@ -349,15 +252,14 @@ interface B2CCallbackData {
 
 ### 1. Store Conversation IDs
 
-Always store both `ConversationID` and `OriginatorConversationID` to track payment status:
+Always store conversation IDs to track payment status:
 
 ```typescript
-const response = await mpesa.b2c({
+const response = await mpesa.client.b2c({
   /* ... */
 });
 
-// Save to database
-await db.b2cTransaction.create({
+await db.disbursement.create({
   data: {
     conversationId: response.ConversationID,
     originatorConversationId: response.OriginatorConversationID,
@@ -367,83 +269,83 @@ await db.b2cTransaction.create({
 });
 ```
 
-### 2. Implement Amount Validation
+### 2. Validate Recipients
 
-Always validate amounts before sending:
+Verify recipient details before initiating payments:
 
 ```typescript
-async function validateB2CAmount(amount: number) {
-  if (amount < 10) {
-    throw new Error("Minimum B2C amount is 10 KES");
+async function validateRecipient(phoneNumber: string) {
+  // Check if phone number is registered
+  const user = await db.user.findFirst({
+    where: { phoneNumber },
+  });
+
+  if (!user || !user.mpesaVerified) {
+    throw new Error("Invalid recipient");
   }
 
-  if (amount > 150000) {
-    throw new Error("Maximum B2C amount is 150,000 KES");
-  }
-
-  return true;
+  return user;
 }
 ```
 
-### 3. Handle Insufficient Balance
+### 3. Handle All Result Codes
 
-B2C transactions will fail if your business account has insufficient funds:
+Process different payment outcomes appropriately:
 
 ```typescript
 callbackOptions: {
   onB2CResult: async (data) => {
-    if (!data.isSuccess && data.errorMessage?.includes("insufficient")) {
-      // Alert finance team
-      await alertFinanceTeam("B2C account low balance");
+    if (data.isSuccess) {
+      await processSuccessfulPayment(data);
+    } else {
+      await handleFailedPayment(data);
 
-      // Queue transaction for retry
-      await queueForRetry(data.conversationId);
+      // Notify admin for manual review
+      if (data.errorMessage?.includes("insufficient funds")) {
+        await notifyAdmin("B2C failed - insufficient balance");
+      }
     }
   },
 }
 ```
 
-### 4. Implement Duplicate Prevention
+### 4. Implement Retry Logic
 
-Prevent processing the same B2C transaction twice:
+Handle temporary failures with retry mechanisms:
 
 ```typescript
-async function initiateB2CPayment(request: B2CRequest) {
-  // Check for existing pending transaction
-  const existing = await db.b2cTransaction.findFirst({
-    where: {
-      phoneNumber: request.phoneNumber,
-      amount: request.amount,
-      status: "PENDING",
-      createdAt: {
-        gte: new Date(Date.now() - 5 * 60 * 1000), // Last 5 minutes
-      },
-    },
-  });
+async function disburseFundsWithRetry(
+  request: DisbursementRequest,
+  maxRetries = 3,
+) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await processDisbursement(request);
+    } catch (error: any) {
+      if (attempt === maxRetries) throw error;
 
-  if (existing) {
-    throw new Error("Duplicate B2C transaction detected");
+      // Wait before retry
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    }
   }
-
-  // Proceed with B2C payment
-  return await mpesa.client.b2c(request);
 }
 ```
 
 ### 5. Monitor Transaction Charges
 
-B2C transactions incur charges. Track them for accounting:
+Track B2C charges for financial reporting:
 
 ```typescript
 callbackOptions: {
   onB2CResult: async (data) => {
-    if (data.isSuccess && data.charges) {
+    if (data.isSuccess) {
+      // Record charges
       await db.transactionCharges.create({
         data: {
           transactionId: data.transactionId,
-          amount: data.charges,
+          amount: data.amount,
+          charges: data.charges,
           type: "B2C",
-          date: new Date(),
         },
       });
     }
@@ -460,22 +362,23 @@ callbackOptions: {
 **Solution**:
 
 ```bash
-# Verify credentials in your configuration
-echo $MPESA_INITIATOR_NAME
-echo $MPESA_SECURITY_CREDENTIAL
-
-# Regenerate security credential from developer portal if needed
+# Verify credentials in developer portal
+# Ensure initiator is approved for B2C transactions
 ```
 
 ### "Insufficient Balance"
 
-**Cause**: Business M-Pesa account doesn't have enough funds
+**Cause**: Business account has insufficient funds
 
 **Solution**:
 
-- Top up your business M-Pesa account
-- Implement balance monitoring to alert before running out
-- Queue failed transactions for automatic retry
+```typescript
+// Check balance before B2C
+const balance = await mpesa.client.accountBalance();
+if (balance.availableBalance < amount) {
+  throw new Error("Insufficient business account balance");
+}
+```
 
 ### Callback Not Received
 
@@ -492,109 +395,70 @@ echo $MPESA_SECURITY_CREDENTIAL
 ngrok http 3000
 
 # 2. Verify route exists
-# app/api/mpesa/callback/route.ts (framework dependent)
+# app/api/mpesa/b2c-result/route.ts
 
-# 3. Check Safaricom IPs are allowed
+# 3. Allow Safaricom IPs
 # 196.201.214.200, 196.201.214.206, etc.
 ```
 
-### "Invalid Phone Number"
+### "Transaction Failed"
 
-**Cause**: Phone number not registered with M-Pesa or invalid format
-
-**Solution**:
-
-- Verify phone number is correctly formatted (254XXXXXXXXX)
-- Ensure recipient is registered with M-Pesa
-- Check that the number is active and not blocked
-
-### Transaction Stuck in Pending
-
-**Cause**: Callback not received or processed
+**Cause**: Recipient phone number invalid or not registered
 
 **Solution**:
 
 ```typescript
-// Implement a status check after timeout
-async function checkB2CStatus(conversationId: string) {
-  const transaction = await db.b2cTransaction.findUnique({
-    where: { conversationId },
-  });
-
-  if (transaction.status === "PENDING") {
-    const now = new Date();
-    const createdAt = new Date(transaction.createdAt);
-    const minutesElapsed = (now.getTime() - createdAt.getTime()) / 60000;
-
-    if (minutesElapsed > 5) {
-      // Mark as timeout after 5 minutes
-      await db.b2cTransaction.update({
-        where: { conversationId },
-        data: { status: "TIMEOUT" },
-      });
-    }
-  }
+// Validate phone number format
+function isValidKenyanPhone(phone: string): boolean {
+  return /^254[17]\d{8}$/.test(phone);
 }
+
+// Verify M-Pesa registration
+await verifyMpesaRegistration(phoneNumber);
 ```
 
 ## Security Considerations
 
-### 1. Secure Credentials
+### 1. Validate Callback IP
 
-Never expose your security credential in client-side code:
-
-```typescript
-// ❌ WRONG - Never do this
-const mpesa = new MpesaClient({
-  securityCredential: "exposed_credential",
-});
-
-// ✅ CORRECT - Use environment variables
-const mpesa = new MpesaClient({
-  securityCredential: process.env.MPESA_SECURITY_CREDENTIAL,
-});
-```
-
-### 2. Validate Callback IPs
-
-Always validate that callbacks are from Safaricom:
+Always validate callbacks are from Safaricom:
 
 ```typescript
 callbackOptions: {
-  validateIp: true, // Enable IP validation
+  validateIp: true,
 }
 ```
 
-### 3. Implement Rate Limiting
+### 2. Implement Approval Workflow
 
-Prevent abuse by implementing rate limiting:
+Add approval for large disbursements:
+
+```typescript
+async function initiateDisbursement(request: DisbursementRequest) {
+  if (request.amount > 10000) {
+    // Require approval
+    await createApprovalRequest(request);
+    return { status: "pending_approval" };
+  }
+
+  return await processDisbursement(request);
+}
+```
+
+### 3. Rate Limiting
+
+Protect against abuse with rate limits:
 
 ```typescript
 const mpesa = new MpesaClient(config, {
   rateLimitOptions: {
     enabled: true,
-    maxRequests: 10, // Max 10 B2C requests
-    windowMs: 60000, // Per minute
+    maxRequests: 50,
+    windowMs: 60000,
   },
 });
 ```
 
-## Next Steps
+```
 
-<Cards>
-  <Card title="B2B Payments" href="/api-reference/b2b">
-    Send money between businesses
-  </Card>
-
-<Card title="Account Balance" href="/api-reference/account-balance">
-  Check your M-Pesa account balance
-</Card>
-
-<Card title="Transaction Status" href="/api-reference/transaction-status">
-  Query payment status
-</Card>
-
-  <Card title="Error Handling" href="/api-reference/error-handling">
-    Handle errors and edge cases
-  </Card>
-</Cards>
+```

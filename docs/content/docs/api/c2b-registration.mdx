@@ -3,6 +3,8 @@ title: C2B Registration
 description: Register validation and confirmation URLs for Customer to Business payments
 ---
 
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
 ## Overview
 
 Before you can receive C2B payments, you must register your validation and confirmation URLs with M-Pesa. This tells M-Pesa where to send payment notifications when customers pay to your paybill or till number.
@@ -17,14 +19,262 @@ Before you can receive C2B payments, you must register your validation and confi
 
 ## Usage
 
+Unfortunately the Mpesa API does not let us have the word M-pesa in the route so we will need to configure a new Catch all route.
+
+### For Fullstack Frameworks
+
+<Tabs items={["Next.js", "SvelteKit", "Nuxt.js"]}>
+  <Tab value="Next.js">
+``` typescript title="app/api/payments/[...mpesa]/route.ts"
+import { mpesa } from "~/lib/mpesa";
+
+export const { POST } = mpesa.handlers.catchAll;
+```
+  </Tab>
+  <Tab value="SvelteKit">
+``` typescript title="src/routes/api/payments/[...path]/+server.ts"
+import { mpesa } from '$lib/mpesa';
+
+export const POST = mpesa.handlers.catchAll.POST;
+
+````
+  </Tab>
+  <Tab value="Nuxt.js">
+``` typescript title="server/api/payments/[...path].post.ts"
+import { mpesa } from "../../utils/mpesa";
+
+export default mpesa.handlers.catchAll;
+````
+
+  </Tab>
+</Tabs>
+
+### For Backend Frameworks
+
+We will need to add a new route in the configuration file.
+
+<Tabs items={[ "Elysia", "Express", "Fastify", "Hono"]}>
+
+  <Tab value="Elysia">
+```typescript
+import { Elysia } from "elysia";
+import { cors } from "@elysiajs/cors";
+import { createMpesa } from "@singularity-payments/elysia";
+
+const mpesa = createMpesa({
+consumerKey: process.env.MPESA_CONSUMER_KEY!,
+consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+passkey: process.env.MPESA_PASSKEY!,
+shortcode: process.env.MPESA_SHORTCODE!,
+environment: "sandbox",
+callbackUrl: `https://your-domain.ngrok-free.dev/api/mpesa/callback`,
+});
+
+const app = new Elysia()
+.use(
+cors({
+origin: "http://localhost:3000",
+credentials: true,
+allowedHeaders: ["Content-Type", "Authorization"],
+methods: ["GET", "POST", "OPTIONS"],
+}),
+)
+.get("/", () => "M-Pesa Payment API")
+.get("/health", () => ({ status: "ok" }))
+.group("/api/mpesa", (app) => app.use(mpesa.app))
+.group("/api/payments", (app) => app.use(mpesa.app)) // Add this
+.listen(3004);
+
+console.log("Registered routes:");
+app.routes.forEach((route) => {
+console.log(`${route.method} ${route.path}`);
+});
+
+console.log(
+`Elysia is running at ${app.server?.hostname}:${app.server?.port}`,
+);
+
+````
+  </Tab>
+
+  <Tab value="Express">
+```typescript
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import { createMpesa } from "@singularity-payments/express";
+
+const app = express();
+
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "http://localhost:3001"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  }),
+);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`, req.body);
+  next();
+});
+
+const mpesa = createMpesa({
+  consumerKey: process.env.MPESA_CONSUMER_KEY!,
+  consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+  passkey: process.env.MPESA_PASSKEY!,
+  shortcode: process.env.MPESA_SHORTCODE!,
+  environment: "sandbox",
+  callbackUrl: `https://your-domain.ngrok-free.dev/api/mpesa/callback`,
+});
+
+const mpesaRouter = express.Router();
+mpesa.router(mpesaRouter);
+app.use("/api/mpesa", mpesaRouter);
+app.use("/api/mpesa", mpesaRouter); // Add this
+
+app.use((err, req, res, next) => {
+  console.error("Error:", err);
+  res.status(500).json({
+    success: false,
+    error: err.message || "Internal server error",
+  });
+});
+
+app.listen(3001, () => {
+  console.log("Server running on port 3001");
+  console.log("Environment variables loaded:", {
+    hasConsumerKey: !!process.env.MPESA_CONSUMER_KEY,
+    hasConsumerSecret: !!process.env.MPESA_CONSUMER_SECRET,
+    hasPasskey: !!process.env.MPESA_PASSKEY,
+    hasShortcode: !!process.env.MPESA_SHORTCODE,
+  });
+});
+````
+
+  </Tab>
+
+  <Tab value="Fastify">
+```typescript
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import { config } from "dotenv";
+import { createMpesa } from "@singularity-payments/fastify";
+
+config();
+
+const fastify = Fastify({
+logger: true,
+});
+
+fastify.register(cors, {
+origin: "http://localhost:3000",
+credentials: true,
+});
+
+const mpesa = createMpesa({
+consumerKey: process.env.MPESA_CONSUMER_KEY!,
+consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+passkey: process.env.MPESA_PASSKEY!,
+shortcode: process.env.MPESA_SHORTCODE!,
+environment: "sandbox",
+callbackUrl: `https://your-domain.ngrok-free.dev/api/mpesa/callback`,
+});
+
+fastify.register(
+async (instance) => {
+mpesa.router(instance);
+},
+{ prefix: "/api/mpesa" },
+);
+// Add this
+fastify.register(
+async (instance) => {
+mpesa.router(instance);
+},
+{ prefix: "/api/payments" },
+);
+const start = async () => {
+try {
+await fastify.listen({ port: 3003, host: "0.0.0.0" });
+console.log("Server running on port 3003");
+} catch (err) {
+fastify.log.error(err);
+process.exit(1);
+}
+};
+
+start();
+
+````
+  </Tab>
+
+  <Tab value="Hono">
+```typescript
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { config } from "dotenv";
+import { createMpesa } from "@singularity-payments/hono";
+import { cors } from "hono/cors";
+
+config();
+
+const app = new Hono();
+
+app.use("/api/*", cors());
+app.use(
+  "/api/*",
+  cors({
+    origin: "http://localhost:3000",
+    allowHeaders: ["X-Custom-Header", "Upgrade-Insecure-Requests"],
+    allowMethods: ["POST", "GET", "OPTIONS"],
+    exposeHeaders: ["Content-Length", "X-Kuma-Revision"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+const mpesa = createMpesa({
+  consumerKey: process.env.MPESA_CONSUMER_KEY!,
+  consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+  passkey: process.env.MPESA_PASSKEY!,
+  shortcode: process.env.MPESA_SHORTCODE!,
+  environment: "sandbox",
+  callbackUrl: `https://your-domain.ngrok-free.dev/api/mpesa/callback`,
+});
+
+app.route("/api/mpesa", mpesa.app);
+app.route("/api/payments", mpesa.app);
+
+serve({
+  fetch: app.fetch,
+  port: 3002,
+});
+
+console.log("Server running on port 3002");
+````
+
+  </Tab>
+</Tabs>
+
+This single route handles all M-Pesa operations including callbacks, payment initiation, and status queries.
+
 ### Server Side
 
 ```typescript
 const response = await mpesa.client.registerC2BUrl({
-  shortCode: "600998",
+  shortCode: "600998", // use this shortcode for C2B Transactions
   responseType: "Completed",
-  confirmationURL: "https://yourdomain.com/api/mpesa/c2b-confirmation",
-  validationURL: "https://yourdomain.com/api/mpesa/c2b-validation",
+  confirmationURL:
+    "https://your-domain.ngrok-free.dev/api/payments/c2b-confirmation",
+  validationURL:
+    "https://your-domain.ngrok-free.dev/api/payments/c2b-validation",
 });
 ```
 
@@ -32,10 +282,10 @@ const response = await mpesa.client.registerC2BUrl({
 
 ```typescript
 const { data, error } = await mpesaClient.registerC2B({
-  shortCode: "600998",
+  shortCode: "600998", // use this shortcode for C2B Transactions
   responseType: "Completed",
-  confirmationURL: "https://yourdomain.com/api/mpesa/c2b-confirmation",
-  validationURL: "https://yourdomain.com/api/mpesa/c2b-validation",
+  confirmationURL: "https://yourdomain.com/api/payments/c2b-confirmation",
+  validationURL: "https://yourdomain.com/api/payments/c2b-validation",
 });
 
 if (error) {
