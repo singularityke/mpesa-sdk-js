@@ -10,7 +10,6 @@
 "@singularity-payments/hono": patch
 "@singularity-payments/nuxt": patch
 "@singularity-payments/vue": patch
-"docs": patch
 ---
 
-Add shortcode to simulate(optionally)
+Updates for the Shortcode and Versioning
