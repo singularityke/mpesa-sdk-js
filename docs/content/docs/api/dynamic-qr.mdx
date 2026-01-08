@@ -1,0 +1,553 @@
+---
+title: Dynamic QR Code
+description: Generate dynamic QR codes for M-Pesa payments
+---
+
+## Overview
+
+Dynamic QR codes allow customers to scan and pay using their M-Pesa app. Unlike static QR codes, dynamic QR codes can contain specific amounts, merchant information, and reference numbers for each transaction.
+
+## How It Works
+
+1. **Generate QR Code**: Your application requests a QR code from M-Pesa with payment details
+2. **Display QR Code**: Show the generated QR code to the customer
+3. **Customer Scans**: Customer scans the QR code using their M-Pesa app
+4. **Customer Pays**: Customer authorizes the payment with their PIN
+5. **Receive Confirmation**: Payment confirmation is sent to your C2B callback URL
+
+## Implementation
+
+### Server-Side
+
+```typescript
+const response = await mpesa.client.generateDynamicQR({
+  merchantName: "My Shop",
+  refNo: "INV-001",
+  amount: 100,
+  transactionType: "BG",
+  creditPartyIdentifier: "174379",
+  size: "300",
+});
+```
+
+The response will look like this if successful:
+
+```json
+{
+  "ResponseCode": "00",
+  "ResponseDescription": "The service request is processed successfully.",
+  "QRCode": "iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51AAAACXBI..."
+}
+```
+
+### Complete Example with Database
+
+```typescript
+import { db } from "./db";
+import { qrCodes, orders } from "./schema";
+import { eq } from "drizzle-orm";
+import { mpesa } from "@/lib/mpesa";
+
+interface QRCodeRequest {
+  orderId: string;
+}
+
+async function generatePaymentQR(request: QRCodeRequest) {
+  const { orderId } = request;
+
+  try {
+    const order = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+
+    if (order.length === 0) {
+      throw new Error("Order not found");
+    }
+
+    if (order[0].status !== "pending") {
+      throw new Error("Order is not pending payment");
+    }
+
+    const response = await mpesa.client.generateDynamicQR({
+      merchantName: "My Store",
+      refNo: order[0].orderNumber,
+      amount: Number(order[0].amount),
+      transactionType: "BG",
+      creditPartyIdentifier: process.env.MPESA_SHORTCODE!,
+      size: "300",
+    });
+
+    await db.insert(qrCodes).values({
+      orderId,
+      orderNumber: order[0].orderNumber,
+      qrCode: response.QRCode,
+      amount: order[0].amount,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      qrCode: response.QRCode,
+      orderNumber: order[0].orderNumber,
+    };
+  } catch (error) {
+    console.error("QR generation failed:", error);
+    throw error;
+  }
+}
+```
+
+### Displaying the QR Code
+
+```typescript
+import Image from "next/image";
+
+interface QRDisplayProps {
+  qrCode: string;
+  amount: number;
+  orderNumber: string;
+}
+
+export function QRDisplay({ qrCode, amount, orderNumber }: QRDisplayProps) {
+  const qrDataUrl = `data:image/png;base64,${qrCode}`;
+
+  return (
+    <div className="flex flex-col items-center space-y-4">
+      <h2 className="text-2xl font-bold">Scan to Pay</h2>
+      <div className="border-4 border-gray-200 rounded-lg p-4">
+        <Image
+          src={qrDataUrl}
+          alt="Payment QR Code"
+          width={300}
+          height={300}
+        />
+      </div>
+      <div className="text-center">
+        <p className="text-lg font-semibold">Amount: KES {amount}</p>
+        <p className="text-sm text-gray-600">Order: {orderNumber}</p>
+      </div>
+      <div className="text-sm text-gray-500">
+        <p>1. Open M-Pesa app</p>
+        <p>2. Select Lipa Na M-Pesa</p>
+        <p>3. Select Pay by QR</p>
+        <p>4. Scan this code</p>
+      </div>
+    </div>
+  );
+}
+```
+
+### Handling Payment Confirmation
+
+```typescript
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    callbackOptions: {
+      onC2BConfirmation: async (data) => {
+        console.log("QR Payment received:", {
+          amount: data.amount,
+          billRefNumber: data.billRefNumber,
+          transactionId: data.transactionId,
+        });
+
+        const order = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.orderNumber, data.billRefNumber))
+          .limit(1);
+
+        if (order.length === 0) {
+          console.error("Order not found for QR payment");
+          return;
+        }
+
+        await db
+          .update(orders)
+          .set({
+            status: "paid",
+            mpesaReceiptNumber: data.transactionId,
+            paidAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.id, order[0].id));
+
+        await db
+          .update(qrCodes)
+          .set({
+            status: "used",
+            usedAt: new Date(),
+          })
+          .where(eq(qrCodes.orderId, order[0].id));
+
+        await sendConfirmationEmail(order[0]);
+      },
+    },
+  },
+);
+```
+
+## API Reference
+
+### Dynamic QR Request
+
+```typescript
+interface DynamicQRRequest {
+  merchantName: string;
+  refNo: string;
+  amount: number;
+  transactionType: "BG" | "WA" | "PB" | "SM";
+  creditPartyIdentifier: string;
+  size?: "300" | "500";
+}
+```
+
+#### Parameters
+
+| Parameter               | Type   | Required | Description                                                            |
+| ----------------------- | ------ | -------- | ---------------------------------------------------------------------- |
+| `merchantName`          | string | Yes      | Business name to display. Max 26 characters                            |
+| `refNo`                 | string | Yes      | Reference number for transaction. Max 12 characters                    |
+| `amount`                | number | Yes      | Payment amount in KES. Between 1 and 999,999                           |
+| `transactionType`       | string | Yes      | Transaction type: BG=Buy Goods, WA=Withdraw, PB=Paybill, SM=Send Money |
+| `creditPartyIdentifier` | string | Yes      | Till number or Paybill number                                          |
+| `size`                  | string | No       | QR code size in pixels: "300" or "500". Defaults to "300"              |
+
+### Transaction Types
+
+| Code | Description | Use Case                   |
+| ---- | ----------- | -------------------------- |
+| `BG` | Buy Goods   | Till number payments       |
+| `PB` | Paybill     | Paybill payments           |
+| `WA` | Withdraw    | Agent withdrawals          |
+| `SM` | Send Money  | Person to person transfers |
+
+### Dynamic QR Response
+
+```typescript
+interface DynamicQRResponse {
+  ResponseCode: string;
+  ResponseDescription: string;
+  QRCode: string;
+}
+```
+
+#### Response Codes
+
+| Code           | Description         | Action                     |
+| -------------- | ------------------- | -------------------------- |
+| `00`           | Success             | Display QR code            |
+| `01`           | Rejected            | Check error and retry      |
+| `500.001.1001` | Invalid credentials | Verify consumer key/secret |
+| `400.002.02`   | Invalid parameters  | Verify request parameters  |
+
+### QR Code Format
+
+The `QRCode` field contains a Base64-encoded PNG image that can be displayed directly:
+
+```typescript
+const qrDataUrl = `data:image/png;base64,${response.QRCode}`;
+```
+
+## Best Practices
+
+### 1. Set Expiration Times
+
+QR codes should expire after a reasonable time:
+
+```typescript
+const QR_EXPIRY_MINUTES = 30;
+
+await db.insert(qrCodes).values({
+  orderId: order.id,
+  qrCode: response.QRCode,
+  expiresAt: new Date(Date.now() + QR_EXPIRY_MINUTES * 60 * 1000),
+  status: "active",
+});
+```
+
+### 2. Validate Before Payment
+
+Use C2B validation to check QR code status:
+
+```typescript
+callbackOptions: {
+  onC2BValidation: async (data) => {
+    const qrCode = await db.qrCode.findUnique({
+      where: { orderNumber: data.billRefNumber },
+    });
+
+    if (!qrCode) return false;
+    if (qrCode.status !== "active") return false;
+    if (qrCode.expiresAt < new Date()) return false;
+    if (qrCode.amount !== data.amount) return false;
+
+    return true;
+  },
+}
+```
+
+### 3. One-Time Use
+
+Ensure QR codes are only used once:
+
+```typescript
+await db
+  .update(qrCodes)
+  .set({
+    status: "used",
+    usedAt: new Date(),
+  })
+  .where(eq(qrCodes.id, qrCode.id));
+```
+
+### 4. Store QR Codes Efficiently
+
+Store QR codes in a way that allows quick lookup:
+
+```typescript
+interface QRCodeRecord {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  qrCode: string;
+  amount: number;
+  status: "active" | "used" | "expired";
+  expiresAt: Date;
+  usedAt?: Date;
+  createdAt: Date;
+}
+```
+
+### 5. Implement QR Code Cleanup
+
+Remove expired QR codes regularly:
+
+```typescript
+async function cleanupExpiredQRCodes() {
+  await db
+    .update(qrCodes)
+    .set({ status: "expired" })
+    .where({
+      status: "active",
+      expiresAt: { lt: new Date() },
+    });
+}
+```
+
+### 6. Download Option
+
+Allow users to download QR codes:
+
+```typescript
+function downloadQRCode(qrCode: string, filename: string) {
+  const link = document.createElement("a");
+  link.href = `data:image/png;base64,${qrCode}`;
+  link.download = `${filename}.png`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+```
+
+## Complete Example
+
+```typescript
+import { mpesa } from "@/lib/mpesa";
+import { db } from "./db";
+import { orders, qrCodes } from "./schema";
+
+export async function createOrderWithQR(orderData: {
+  customerId: string;
+  items: Array<{ productId: string; quantity: number }>;
+}) {
+  const orderNumber = `ORD-${Date.now()}`;
+  const totalAmount = calculateTotal(orderData.items);
+
+  const order = await db.insert(orders).values({
+    orderNumber,
+    customerId: orderData.customerId,
+    amount: totalAmount,
+    status: "pending",
+    createdAt: new Date(),
+  });
+
+  const qrResponse = await mpesa.client.generateDynamicQR({
+    merchantName: "My Store",
+    refNo: orderNumber,
+    amount: totalAmount,
+    transactionType: "BG",
+    creditPartyIdentifier: process.env.MPESA_TILL_NUMBER!,
+    size: "300",
+  });
+
+  await db.insert(qrCodes).values({
+    orderId: order.id,
+    orderNumber,
+    qrCode: qrResponse.QRCode,
+    amount: totalAmount,
+    status: "active",
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    createdAt: new Date(),
+  });
+
+  return {
+    orderId: order.id,
+    orderNumber,
+    qrCode: qrResponse.QRCode,
+    amount: totalAmount,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+  };
+}
+
+const mpesa = new MpesaClient(
+  {
+    environment: "sandbox",
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    passkey: process.env.MPESA_PASSKEY!,
+    initiatorName: process.env.MPESA_INITIATOR_NAME!,
+    securityCredential: process.env.MPESA_SECURITY_CREDENTIAL!,
+    callbackUrl: `${process.env.APP_URL}/api/mpesa/callback`,
+  },
+  {
+    callbackOptions: {
+      onC2BValidation: async (data) => {
+        const qrCode = await db
+          .select()
+          .from(qrCodes)
+          .where(eq(qrCodes.orderNumber, data.billRefNumber))
+          .limit(1);
+
+        if (qrCode.length === 0) return false;
+        if (qrCode[0].status !== "active") return false;
+        if (qrCode[0].expiresAt < new Date()) return false;
+        if (qrCode[0].amount !== data.amount) return false;
+
+        return true;
+      },
+
+      onC2BConfirmation: async (data) => {
+        const order = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.orderNumber, data.billRefNumber))
+          .limit(1);
+
+        if (order.length === 0) return;
+
+        await db
+          .update(orders)
+          .set({
+            status: "paid",
+            mpesaReceiptNumber: data.transactionId,
+            paidAt: new Date(),
+          })
+          .where(eq(orders.id, order[0].id));
+
+        await db
+          .update(qrCodes)
+          .set({
+            status: "used",
+            usedAt: new Date(),
+          })
+          .where(eq(qrCodes.orderNumber, data.billRefNumber));
+      },
+    },
+  },
+);
+```
+
+## Troubleshooting
+
+### "Invalid Merchant Name"
+
+**Cause**: Merchant name exceeds 26 characters
+
+**Solution**:
+
+```typescript
+const merchantName = "Very Long Business Name".substring(0, 26);
+```
+
+### "Invalid Reference Number"
+
+**Cause**: Reference number exceeds 12 characters
+
+**Solution**:
+
+```typescript
+const refNo = `ORD-${orderId}`.substring(0, 12);
+```
+
+### "Amount Out of Range"
+
+**Cause**: Amount is less than 1 or greater than 999,999
+
+**Solution**:
+
+```typescript
+if (amount < 1 || amount > 999999) {
+  throw new Error("Amount must be between 1 and 999,999 KES");
+}
+```
+
+### QR Code Not Displaying
+
+**Cause**: Invalid Base64 format or missing data URL prefix
+
+**Solution**:
+
+```typescript
+const qrDataUrl = `data:image/png;base64,${response.QRCode}`;
+```
+
+### Customer Cannot Scan
+
+**Causes**:
+
+1. QR code size too small
+2. Low image quality
+3. Poor lighting
+
+**Solutions**:
+
+```typescript
+const response = await mpesa.client.generateDynamicQR({
+  size: "500",
+});
+```
+
+### Payment Not Confirmed
+
+**Causes**:
+
+1. C2B URLs not registered
+2. Callback URL not accessible
+3. Validation rejecting payments
+
+**Solutions**:
+
+```typescript
+await mpesa.client.registerC2BUrl({
+  shortCode: process.env.MPESA_SHORTCODE!,
+  responseType: "Completed",
+  confirmationURL: `${process.env.APP_URL}/api/mpesa/c2b/confirmation`,
+  validationURL: `${process.env.APP_URL}/api/mpesa/c2b/validation`,
+});
+```
+
+## Important Notes
+
+1. **Register C2B URLs**: You must register C2B callback URLs before QR payments work
+2. **Till vs Paybill**: Use correct transaction type (BG for Till, PB for Paybill)
+3. **Expiration**: Implement QR code expiration to prevent stale payments
+4. **One-Time Use**: Mark QR codes as used after successful payment
+5. **Amount Validation**: Always validate payment amount matches QR code amount
+6. **Security**: Never expose QR code generation endpoints publicly without authentication

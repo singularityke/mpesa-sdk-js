@@ -82,6 +82,8 @@ callbackOptions: {
 const response = await mpesa.client.transactionStatus({
   transactionID: "PGK1234567",
   remarks: "Checking transaction status",
+  resultUrl: "https://yourdomain.ngrok.com/status-result",
+  timeoutUrl: "https://yourdomain.ngrok.com/status-timeout",
 });
 ```
 
@@ -91,7 +93,20 @@ const response = await mpesa.client.transactionStatus({
 const response = await mpesaClient.transactionStatus({
   transactionID: "PGK1234567",
   remarks: "Checking transaction status",
+  resultUrl: "https://yourdomain.ngrok.com/status-result",
+  timeoutUrl: "https://yourdomain.ngrok.com/status-timeout",
 });
+```
+
+The resultUrl and timeoutUrl are required fields. It defaults to the urls in the config but if you are doing more than one type of mpesa transactions on your app, you will have different endpoints to handle each transaction.
+
+#### If you are only doing B2C payments
+
+You can update your env to this
+
+```
+MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/status-result
+MPESA_TIMEOUT_URL=https://yourdomain.com/api/mpesa/status-timeout
 ```
 
 The response will look like this if successful:
@@ -916,23 +931,3 @@ async function batchProcessStatusChecks(transactionIds: string[]) {
   }
 }
 ```
-
-## Next Steps
-
-<Cards>
-  <Card title="Reversal" href="/api-reference/reversal">
-    Reverse erroneous transactions
-  </Card>
-
-<Card title="Account Balance" href="/api-reference/account-balance">
-  Check your M-Pesa account balance
-</Card>
-
-<Card title="B2C Payments" href="/api-reference/b2c">
-  Send money to customers
-</Card>
-
-  <Card title="Error Handling" href="/api-reference/error-handling">
-    Handle errors and edge cases
-  </Card>
-</Cards>

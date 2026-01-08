@@ -1,0 +1,555 @@
+---
+title: Account Balance Query
+description: Query your M-Pesa account balance programmatically
+---
+
+## Overview
+
+The Account Balance API allows you to check your M-Pesa business account balance programmatically. This is useful for monitoring your account status, reconciliation, and automated balance tracking.
+
+## How It Works
+
+1. **Initiate Request**: Your application sends an account balance query to M-Pesa
+2. **M-Pesa Processing**: M-Pesa retrieves your current account balance information
+3. **Receive Callback**: M-Pesa sends the balance details to your result URL
+4. **Process Result**: Your application processes the balance information
+
+## Basic Usage
+
+### Server-Side
+
+```typescript
+const response = await mpesa.client.accountBalance({
+  partyA: "600998", // Optional: defaults to config.shortcode
+  identifierType: "4", // Optional: defaults to "4" (Paybill)
+  remarks: "Balance check",
+  resultUrl:
+    "https://sliverlike-unpredaceously-ariana.ngrok-free.dev/api/mpesa/balance-result",
+  timeoutUrl:
+    "https://sliverlike-unpredaceously-ariana.ngrok-free.dev/api/mpesa/balance-timeout",
+});
+
+console.log(response);
+// {
+//   ConversationID: "AG_20231222_00004123456789",
+//   OriginatorConversationID: "12345-67890-1",
+//   ResponseCode: "0",
+//   ResponseDescription: "Accept the service request successfully."
+// }
+```
+
+### Client-Side
+
+```typescript
+const { data, error } = await mpesaClient.accountBalance({
+  partyA: "600998", // Optional: defaults to config.shortcode
+  identifierType: "4", // Optional: defaults to "4" (Paybill)
+  remarks: "Daily balance check",
+  resultUrl:
+    "https://sliverlike-unpredaceously-ariana.ngrok-free.dev/api/mpesa/balance-result",
+  timeoutUrl:
+    "https://sliverlike-unpredaceously-ariana.ngrok-free.dev/api/mpesa/balance-timeout",
+});
+
+if (data?.ResponseCode === "0") {
+  console.log("Balance query accepted, awaiting callback");
+} else {
+  console.log("Query failed:", data?.ResponseDescription);
+}
+```
+
+The resultUrl and timeoutUrl are required fields. It defaults to the urls in the config but if you are doing more than one type of mpesa transactions on your app, you will have different endpoints to handle each transaction.
+
+#### If you are only doing B2C payments
+
+You can update your env to this
+
+```
+MPESA_RESULT_URL=https://yourdomain.com/api/mpesa/balance-result
+MPESA_TIMEOUT_URL=https://yourdomain.com/api/mpesa/balance-timeout
+```
+
+## Real-World Example
+
+Here's a complete example with database storage and callback handling:
+
+```typescript
+import { db } from "./db";
+import { balanceQueries } from "./schema";
+import { mpesa } from "@/lib/mpesa";
+
+interface BalanceCheckRequest {
+  reason?: string;
+}
+
+async function checkAccountBalance(request: BalanceCheckRequest = {}) {
+  try {
+    // 1. Initiate balance query
+    const response = await mpesa.client.accountBalance({
+      remarks: request.reason || "Balance inquiry",
+    });
+
+    // 2. Store the query with pending status
+    await db.insert(balanceQueries).values({
+      conversationId: response.ConversationID,
+      originatorConversationId: response.OriginatorConversationID,
+      status: "pending",
+      remarks: request.reason || "Balance inquiry",
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      conversationId: response.ConversationID,
+      message: response.ResponseDescription,
+    };
+  } catch (error) {
+    console.error("Balance query failed:", error);
+    throw error;
+  }
+}
+```
+
+### Handle the Callback
+
+Configure callback handlers when initializing the M-Pesa client:
+
+```typescript
+import { MpesaClient } from "@singularity-payments/nextjs";
+
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    callbackOptions: {
+      // Called when balance query succeeds
+      onAccountBalanceResult: async (data) => {
+        console.log("Balance Retrieved:", {
+          workingBalance: data.workingBalance,
+          availableBalance: data.availableBalance,
+          bookedBalance: data.bookedBalance,
+        });
+
+        // Update your database
+        await db.balanceQueries.update({
+          where: { conversationId: data.conversationId },
+          data: {
+            status: "completed",
+            workingBalance: data.workingBalance,
+            availableBalance: data.availableBalance,
+            bookedBalance: data.bookedBalance,
+            updatedAt: new Date(),
+          },
+        });
+
+        // Send notification
+        await notifyAdmin({
+          subject: "Account Balance Update",
+          balance: data.availableBalance,
+        });
+      },
+
+      // Validate IP (recommended for production)
+      validateIp: true,
+    },
+  },
+);
+```
+
+## API Reference
+
+### Account Balance Request
+
+```typescript
+interface AccountBalanceRequest {
+  partyA?: string; // Business shortcode to query
+  identifierType?: BalanceIdentifierType; // Type of organization
+  remarks?: string; // Query description
+  resultUrl?: string; // Override default result URL
+  timeoutUrl?: string; // Override default timeout URL
+}
+```
+
+#### Parameters
+
+| Parameter        | Type                  | Required | Description                                        |
+| ---------------- | --------------------- | -------- | -------------------------------------------------- |
+| `partyA`         | string                | No       | Business shortcode. Defaults to `config.shortcode` |
+| `identifierType` | BalanceIdentifierType | No       | Organization type. Defaults to `"4"` (Paybill)     |
+| `remarks`        | string                | No       | Description of the query. Max 100 characters       |
+| `resultUrl`      | string                | No       | Override the default callback URL for this query   |
+| `timeoutUrl`     | string                | No       | Override the default timeout URL for this query    |
+
+#### Identifier Types
+
+| Type | Description           | Usage                        |
+| ---- | --------------------- | ---------------------------- |
+| `1`  | MSISDN (Phone Number) | For individual accounts      |
+| `2`  | Till Number           | For Till numbers             |
+| `4`  | Paybill Number        | For Paybill numbers (Common) |
+
+### Account Balance Response
+
+```typescript
+interface AccountBalanceResponse {
+  ConversationID: string; // Unique conversation ID
+  OriginatorConversationID: string; // Your unique request ID
+  ResponseCode: string; // "0" = success
+  ResponseDescription: string; // Human-readable response
+}
+```
+
+#### Response Codes
+
+| Code           | Description               | Action                         |
+| -------------- | ------------------------- | ------------------------------ |
+| `0`            | Success. Request accepted | Wait for callback with balance |
+| `1`            | Rejected                  | Check error message and retry  |
+| `500.001.1001` | Invalid credentials       | Verify initiator credentials   |
+
+### Callback Data Structure
+
+When M-Pesa sends the result, you'll receive:
+
+```typescript
+interface AccountBalanceCallbackData {
+  isSuccess: boolean;
+  workingBalance?: number; // Current working account balance
+  availableBalance?: number; // Available balance for transactions
+  bookedBalance?: number; // Reserved/booked funds
+  errorMessage?: string; // Only present on failure
+}
+```
+
+#### Balance Types Explained
+
+- **Working Balance**: The current balance in your working account
+- **Available Balance**: Funds available for transactions (Working Balance - Booked Balance)
+- **Booked Balance**: Funds reserved for pending transactions
+
+## Handling Callbacks
+
+The default configuration already handles callbacks using a catch-all route.
+
+### Route Setup
+
+Create the callback route at `app/api/mpesa/[...mpesa]/route.ts`:
+
+```typescript
+import { mpesa } from "@/lib/mpesa";
+
+export const { POST } = mpesa.handlers.catchAll;
+```
+
+This automatically handles:
+
+- `/api/mpesa/balance-result` - Balance query results
+- `/api/mpesa/balance-timeout` - Timeout notifications
+
+### Process Callbacks in Your Application
+
+```typescript
+import { MpesaClient } from "@singularity-payments/nextjs";
+
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    callbackOptions: {
+      onAccountBalanceResult: async (data) => {
+        if (data.isSuccess) {
+          console.log("Account Balance:", {
+            available: data.availableBalance,
+            working: data.workingBalance,
+            booked: data.bookedBalance,
+          });
+
+          // Update database
+          await db.accountBalance.create({
+            data: {
+              availableBalance: data.availableBalance,
+              workingBalance: data.workingBalance,
+              bookedBalance: data.bookedBalance,
+              queriedAt: new Date(),
+            },
+          });
+
+          // Alert if balance is low
+          if (data.availableBalance && data.availableBalance < 10000) {
+            await sendLowBalanceAlert(data.availableBalance);
+          }
+        } else {
+          console.error("Balance query failed:", data.errorMessage);
+
+          await db.balanceQueries.update({
+            where: { conversationId: data.conversationId },
+            data: {
+              status: "failed",
+              errorMessage: data.errorMessage,
+            },
+          });
+        }
+      },
+
+      // Validate IP (recommended for production)
+      validateIp: true,
+    },
+  },
+);
+```
+
+## Best Practices
+
+### 1. Store Query History
+
+Track all balance queries for audit purposes:
+
+```typescript
+const response = await mpesa.client.accountBalance({
+  remarks: "Automated daily check",
+});
+
+await db.balanceHistory.create({
+  data: {
+    conversationId: response.ConversationID,
+    originatorConversationId: response.OriginatorConversationID,
+    status: "PENDING",
+    queriedBy: userId,
+    queriedAt: new Date(),
+  },
+});
+```
+
+### 2. Implement Rate Limiting
+
+Don't query balance too frequently:
+
+```typescript
+const lastQuery = await db.balanceQueries.findFirst({
+  orderBy: { createdAt: "desc" },
+});
+
+const timeSinceLastQuery = Date.now() - lastQuery.createdAt.getTime();
+const MIN_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+if (timeSinceLastQuery < MIN_INTERVAL) {
+  throw new Error("Please wait before querying balance again");
+}
+```
+
+### 3. Monitor Balance Trends
+
+Track balance changes over time:
+
+```typescript
+callbackOptions: {
+  onAccountBalanceResult: async (data) => {
+    if (data.isSuccess) {
+      // Get previous balance
+      const previous = await db.balanceSnapshots
+        .findFirst({
+          orderBy: { createdAt: "desc" },
+        });
+
+      // Calculate change
+      const change = previous
+        ? data.availableBalance - previous.availableBalance
+        : 0;
+
+      // Store snapshot
+      await db.balanceSnapshots.create({
+        data: {
+          availableBalance: data.availableBalance,
+          workingBalance: data.workingBalance,
+          change,
+          createdAt: new Date(),
+        },
+      });
+
+      // Alert on significant changes
+      if (Math.abs(change) > 50000) {
+        await notifySignificantBalanceChange(change);
+      }
+    }
+  },
+}
+```
+
+### 4. Handle Timeouts
+
+Account for queries that timeout:
+
+```typescript
+// Set up timeout tracking
+await db.balanceQueries.create({
+  data: {
+    conversationId: response.ConversationID,
+    status: "pending",
+    timeoutAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutes
+  },
+});
+
+// Background job to check for timeouts
+setInterval(async () => {
+  const timedOut = await db.balanceQueries.findMany({
+    where: {
+      status: "pending",
+      timeoutAt: { lt: new Date() },
+    },
+  });
+
+  for (const query of timedOut) {
+    await db.balanceQueries.update({
+      where: { id: query.id },
+      data: { status: "timeout" },
+    });
+
+    await notifyBalanceQueryTimeout(query);
+  }
+}, 60000); // Check every minute
+```
+
+## Automated Balance Monitoring
+
+Set up automated balance checks:
+
+```typescript
+import { CronJob } from "cron";
+
+// Check balance every 6 hours
+const balanceCheckJob = new CronJob("0 */6 * * *", async () => {
+  try {
+    console.log("Running scheduled balance check");
+
+    const response = await mpesa.client.accountBalance({
+      remarks: "Automated scheduled check",
+    });
+
+    await db.scheduledChecks.create({
+      data: {
+        conversationId: response.ConversationID,
+        type: "balance",
+        scheduledAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error("Scheduled balance check failed:", error);
+  }
+});
+
+balanceCheckJob.start();
+```
+
+## Troubleshooting
+
+### "Invalid Initiator Credentials"
+
+**Cause**: Incorrect initiator name or security credential
+
+**Solution**:
+
+```bash
+# Verify credentials
+echo $MPESA_INITIATOR_NAME
+echo $MPESA_SECURITY_CREDENTIAL
+
+# Regenerate security credential from developer portal if needed
+```
+
+### "Invalid ShortCode"
+
+**Cause**: Incorrect shortcode for environment
+
+**Solution**:
+
+```typescript
+// Sandbox
+shortcode: "174379";
+
+// Production
+shortcode: "YOUR_PAYBILL_NUMBER";
+```
+
+### Callback Not Received
+
+**Causes**:
+
+1. Result URL not publicly accessible
+2. Firewall blocking Safaricom IPs
+3. Route not properly configured
+
+**Solutions**:
+
+```bash
+# 1. Use ngrok for local development
+ngrok http 3000
+
+# 2. Verify route exists
+# app/api/mpesa/[...mpesa]/route.ts
+
+# 3. Check Safaricom IPs are allowed
+# 196.201.214.200, 196.201.214.206, etc.
+```
+
+### Balance Shows Zero
+
+**Cause**: Querying wrong shortcode or account not active
+
+**Solution**:
+
+- Verify you're querying the correct shortcode
+- Ensure the account has been activated by Safaricom
+- Check that you have the correct identifier type
+- Verify initiator has permission to query balance
+
+## Result Codes
+
+Common result codes in callbacks:
+
+| Code | Description        | Meaning                                   |
+| ---- | ------------------ | ----------------------------------------- |
+| `0`  | Success            | Balance retrieved successfully            |
+| `1`  | Insufficient funds | Not applicable for balance queries        |
+| `11` | Invalid parameters | Check initiator credentials and shortcode |
+| `17` | System error       | Try again later                           |
+
+## Security Considerations
+
+1. **Restrict Access**: Only allow authorized users to query balance
+2. **Validate IPs**: Always validate callback IPs in production
+3. **Encrypt Storage**: Encrypt balance data in your database
+4. **Audit Trail**: Log all balance queries and access
+5. **Alert on Anomalies**: Set up alerts for unusual balance changes
+
+```typescript
+// Example security implementation
+async function checkBalance(userId: string) {
+  // 1. Verify user has permission
+  const user = await db.users.findUnique({ where: { id: userId } });
+  if (!user.canViewBalance) {
+    throw new Error("Unauthorized");
+  }
+
+  // 2. Log the action
+  await db.auditLogs.create({
+    data: {
+      userId,
+      action: "BALANCE_QUERY",
+      timestamp: new Date(),
+    },
+  });
+
+  // 3. Execute query
+  return await mpesa.client.accountBalance({
+    remarks: `Queried by ${user.email}`,
+  });
+}
+```
+
+## Additional Resources
+
+- [M-Pesa Account Balance API Documentation](https://developer.safaricom.co.ke/APIs/AccountBalance)
+- [Error Codes Reference](https://developer.safaricom.co.ke/ErrorCodes)
+- [IP Whitelist Information](https://developer.safaricom.co.ke/IPs)
