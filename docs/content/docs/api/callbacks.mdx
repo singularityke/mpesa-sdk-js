@@ -1,0 +1,394 @@
+---
+title: Callbacks
+description: Handle M-Pesa callback notifications for all transaction types
+---
+
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+
+## Overview
+
+M-Pesa sends asynchronous callback notifications to your server when transactions are completed or when they time out. The SDK provides handlers for all callback types including STK Push, C2B, B2C, B2B, Account Balance, Transaction Status, and Reversal callbacks.
+
+<Callout type="info">
+  All callbacks from M-Pesa must receive a response with `ResultCode` and
+  `ResultDesc`. The SDK handles this automatically.
+</Callout>
+
+## Callback Types
+
+The SDK supports the following callback types:
+
+- **STK Push Callbacks** - Results from Lipa Na M-Pesa Online payments
+- **C2B Validation** - Validate incoming customer payments before acceptance
+- **C2B Confirmation** - Confirm completed customer payments
+- **B2C Result** - Results from business to customer payments
+- **B2B Result** - Results from business to business payments
+- **Account Balance Result** - Account balance query results
+- **Transaction Status Result** - Transaction status query results
+- **Reversal Result** - Transaction reversal results
+- **Timeout Callbacks** - Notifications when requests timeout
+
+## Setting Up Callbacks
+
+<Steps>
+
+<Step>
+### Configure Callback Handlers
+
+Set up callback handlers when initializing the M-Pesa client:
+
+```typescript
+import { MpesaClient } from "@singularity-payments/core";
+
+const client = new MpesaClient(
+  {
+    environment: "sandbox",
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    passkey: process.env.MPESA_PASSKEY!,
+    initiatorName: process.env.MPESA_INITIATOR_NAME!,
+    securityCredential: process.env.MPESA_SECURITY_CREDENTIAL!,
+    callbackUrl: "https://yourdomain.com/mpesa/stk/callback",
+    resultUrl: "https://yourdomain.com/mpesa/result",
+    timeoutUrl: "https://yourdomain.com/mpesa/timeout",
+  },
+  {
+    callbackOptions: {
+      onSuccess: async (data) => {
+        console.log("Payment successful:", data);
+        // Update database, send confirmation email, etc.
+      },
+      onFailure: async (data) => {
+        console.log("Payment failed:", data);
+        // Handle failed payment
+      },
+      onC2BConfirmation: async (data) => {
+        console.log("C2B payment received:", data);
+        // Process C2B payment
+      },
+      onC2BValidation: async (data) => {
+        // Validate payment before acceptance
+        return true; // Return false to reject
+      },
+      onB2CResult: async (data) => {
+        console.log("B2C payment completed:", data);
+      },
+      onB2BResult: async (data) => {
+        console.log("B2B payment completed:", data);
+      },
+      onAccountBalanceResult: async (data) => {
+        console.log("Account balance:", data);
+      },
+      onTransactionStatusResult: async (data) => {
+        console.log("Transaction status:", data);
+      },
+      onReversalResult: async (data) => {
+        console.log("Reversal completed:", data);
+      },
+      validateIp: true,
+      isDuplicate: async (CheckoutRequestID) => {
+        // Check if callback already processed
+        return false;
+      },
+    },
+  },
+);
+```
+
+</Step>
+
+<Step>
+### Create Callback Routes
+
+Set up routes to receive M-Pesa callbacks:
+
+The frameworks have a default catch all route which will handle all the callbacks.
+
+For C2B callbacks, we add an additional route to handle the callback as Mpesa does not allow us to register a callback URL with the word mpesa in it.
+
+For more details check the C2B Registration
+
+<Card
+  title="Configuring C2B Payments"
+  description="Learn how to obtain M-pesa credentials for your application."
+  href="/docs/api/c2b-registration"
+/>
+
+</Step>
+
+</Steps>
+
+## Callback Data Structures
+
+### STK Push Callback
+
+```typescript
+interface ParsedCallbackData {
+  merchantRequestId: string;
+  CheckoutRequestID: string;
+  resultCode: number;
+  resultDescription: string;
+  amount?: number;
+  mpesaReceiptNumber?: string;
+  transactionDate?: string;
+  phoneNumber?: string;
+  isSuccess: boolean;
+  errorMessage?: string;
+}
+```
+
+### C2B Callback
+
+```typescript
+interface ParsedC2BCallback {
+  transactionType: string;
+  transactionId: string;
+  transactionTime: string;
+  amount: number;
+  businessShortCode: string;
+  billRefNumber: string;
+  invoiceNumber?: string;
+  msisdn: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+}
+```
+
+### B2C Result
+
+```typescript
+interface B2CResult {
+  isSuccess: boolean;
+  transactionId?: string;
+  amount?: number;
+  recipientPhone?: string;
+  charges?: number;
+  errorMessage?: string;
+}
+```
+
+### B2B Result
+
+```typescript
+interface B2BResult {
+  isSuccess: boolean;
+  transactionId?: string;
+  amount?: number;
+  conversationId?: string;
+  originatorConversationId?: string;
+  debitAccountBalance?: string;
+  debitPartyAffectedAccountBalance?: string;
+  transactionCompletedTime?: string;
+  receiverPartyPublicName?: string;
+  currency?: string;
+  errorMessage?: string;
+}
+```
+
+### Account Balance Result
+
+```typescript
+interface AccountBalanceResult {
+  isSuccess: boolean;
+  workingBalance?: number;
+  availableBalance?: number;
+  bookedBalance?: number;
+  errorMessage?: string;
+}
+```
+
+### Transaction Status Result
+
+```typescript
+interface TransactionStatusResult {
+  isSuccess: boolean;
+  receiptNo?: string;
+  amount?: number;
+  completedTime?: string;
+  originatorConversationId?: string;
+  errorMessage?: string;
+}
+```
+
+### Reversal Result
+
+```typescript
+interface ReversalResult {
+  isSuccess: boolean;
+  transactionId?: string;
+  errorMessage?: string;
+}
+```
+
+## IP Validation
+
+The SDK automatically validates that callbacks come from Safaricom's known IP addresses:
+
+```typescript
+const client = new MpesaClient(
+  {
+    environment: "sandbox",
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    passkey: process.env.MPESA_PASSKEY!,
+  },
+  {
+    callbackOptions: {
+      validateIp: true,
+      allowedIps: [
+        "196.201.214.200",
+        "196.201.214.206",
+        "196.201.213.114",
+        "196.201.214.207",
+        "196.201.214.208",
+        "196.201.213.44",
+        "196.201.212.127",
+        "196.201.212.138",
+        "196.201.212.129",
+        "196.201.212.136",
+        "196.201.212.74",
+        "196.201.212.69",
+      ],
+    },
+  },
+);
+```
+
+<Callout type="warn">
+  Always enable IP validation in production to prevent unauthorized callback
+  requests.
+</Callout>
+
+## Duplicate Detection
+
+Prevent processing the same callback multiple times:
+
+```typescript
+const processedCallbacks = new Set<string>();
+
+const client = new MpesaClient(
+  {
+    environment: "sandbox",
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    passkey: process.env.MPESA_PASSKEY!,
+  },
+  {
+    callbackOptions: {
+      isDuplicate: async (CheckoutRequestID) => {
+        if (processedCallbacks.has(CheckoutRequestID)) {
+          return true;
+        }
+        processedCallbacks.add(CheckoutRequestID);
+        return false;
+      },
+    },
+  },
+);
+```
+
+## Error Codes
+
+Common M-Pesa result codes:
+
+| Code | Description                                                    |
+| ---- | -------------------------------------------------------------- |
+| 0    | Success                                                        |
+| 1    | Insufficient funds in M-Pesa account                           |
+| 17   | User cancelled the transaction                                 |
+| 26   | System internal error                                          |
+| 1001 | Unable to lock subscriber, a transaction is already in process |
+| 1019 | Transaction expired, no response from user                     |
+| 1032 | Request cancelled by user                                      |
+| 1037 | Timeout in sending PIN request                                 |
+| 2001 | Wrong PIN entered                                              |
+| 9999 | Request cancelled by user                                      |
+
+## Custom Logging
+
+Add custom logging to track callback processing:
+
+```typescript
+const client = new MpesaClient(
+  {
+    environment: "sandbox",
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    passkey: process.env.MPESA_PASSKEY!,
+  },
+  {
+    callbackOptions: {
+      logger: {
+        info: (message, data) => {
+          console.log(`[INFO] ${message}`, data);
+        },
+        error: (message, data) => {
+          console.error(`[ERROR] ${message}`, data);
+        },
+        warn: (message, data) => {
+          console.warn(`[WARN] ${message}`, data);
+        },
+      },
+    },
+  },
+);
+```
+
+## Testing Callbacks
+
+Parse callbacks without handling them (useful for testing):
+
+```typescript
+const parsed = client.parseSTKCallback(stkCallback);
+console.log("Parsed STK callback:", parsed);
+
+const parsedC2B = client.parseC2BCallback(c2bCallback);
+console.log("Parsed C2B callback:", parsedC2B);
+```
+
+## Best Practices
+
+1. Always return a response with `ResultCode` and `ResultDesc` to M-Pesa
+2. Process callbacks asynchronously to avoid timeouts
+3. Implement duplicate detection to prevent double-processing
+4. Enable IP validation in production
+5. Log all callbacks for auditing and debugging
+6. Use database transactions when updating records based on callbacks
+7. Send confirmation messages to customers after successful payments
+8. Monitor callback failures and implement retry logic where appropriate
+9. Keep callback URLs secure with HTTPS
+10. Store raw callback data before processing for troubleshooting
+
+<Callout type="info">
+  M-Pesa expects a response within 30 seconds. Always respond quickly and
+  process heavy operations asynchronously.
+</Callout>
+
+## Troubleshooting
+
+### Callbacks Not Received
+
+- Verify your callback URLs are publicly accessible
+- Check that your server is running on HTTPS
+- Ensure your firewall allows traffic from Safaricom IPs
+- Verify callback URLs are registered correctly with M-Pesa
+
+### Duplicate Callbacks
+
+- Implement duplicate detection using `isDuplicate` option
+- Store processed callback IDs in a database or cache
+- Use idempotent operations that can safely run multiple times
+
+### Callback Validation Failures
+
+- Check that IP validation is configured correctly
+- Verify the callback structure matches expected format
+- Enable logging to see detailed error messages
+- Test with sample callbacks before going live

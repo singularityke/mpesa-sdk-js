@@ -14,7 +14,7 @@
     "reversal",
     "dynamic-qr",
     "callbacks",
-    "error-handling",
+
     "rate-limiting"
   ]
 }

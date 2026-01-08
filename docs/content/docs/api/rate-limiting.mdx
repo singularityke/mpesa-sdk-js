@@ -1,0 +1,372 @@
+---
+title: Rate Limiting
+description: Protect your M-Pesa integration with built-in rate limiting
+---
+
+## Overview
+
+The SDK includes built-in rate limiting to protect your application from excessive API calls and comply with M-Pesa's API usage policies. Rate limiting prevents your application from exceeding API quotas and protects you against malicious users who may attempt to exploit your integration and prevent legitimate users from being able to pay.
+
+## How It Works
+
+The rate limiter tracks API requests per key within a time window. When the limit is exceeded, the SDK throws a rate limit error, preventing the request from being sent to M-Pesa.
+
+## Configuration
+
+### Basic Setup
+
+Rate limiting is enabled by default with sensible defaults:
+
+```typescript
+import { MpesaClient } from "@singularity-payments/core";
+
+const mpesa = new MpesaClient(
+  {
+    consumerKey: process.env.MPESA_CONSUMER_KEY!,
+    consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+    shortcode: process.env.MPESA_SHORTCODE!,
+    passkey: process.env.MPESA_PASSKEY!,
+    environment: "sandbox",
+    callbackUrl: "https://yourdomain.com/api/mpesa/callback",
+  },
+  {
+    rateLimitOptions: {
+      enabled: true,
+      maxRequests: 100,
+      windowMs: 60000,
+    },
+  },
+);
+```
+
+### Disable Rate Limiting
+
+You can disable rate limiting if needed:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: false,
+  },
+});
+```
+
+### Custom Limits
+
+Adjust limits based on your needs:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: 50,
+    windowMs: 30000,
+  },
+});
+```
+
+## Rate Limit Keys
+
+The SDK automatically generates rate limit keys based on the operation:
+
+| Operation          | Rate Limit Key               | Example                     |
+| ------------------ | ---------------------------- | --------------------------- |
+| STK Push           | `stk:{phoneNumber}`          | `stk:254712345678`          |
+| STK Query          | `query:{CheckoutRequestID}`  | `query:ws_CO_191220191020`  |
+| B2C                | `b2c:{phoneNumber}`          | `b2c:254712345678`          |
+| B2B                | `b2b:{partyB}`               | `b2b:600000`                |
+| Account Balance    | `balance`                    | `balance`                   |
+| Transaction Status | `status:{transactionID}`     | `status:QLK41H6CSQ`         |
+| Reversal           | `reversal:{transactionID}`   | `reversal:QLK41H6CSQ`       |
+| Generate QR        | `qr:{refNo}`                 | `qr:INV001`                 |
+| C2B Register       | `c2b:register`               | `c2b:register`              |
+| C2B Simulate       | `c2b:simulate:{phoneNumber}` | `c2b:simulate:254712345678` |
+
+## Redis-Based Rate Limiting
+
+For production environments with multiple servers, use Redis for distributed rate limiting:
+
+```typescript
+import { MpesaClient } from "@singularity-payments/core";
+import Redis from "ioredis";
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST,
+  port: Number(process.env.REDIS_PORT),
+  password: process.env.REDIS_PASSWORD,
+});
+
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: 100,
+    windowMs: 60000,
+    redis: redis,
+  },
+});
+```
+
+### Redis Configuration
+
+The Redis instance must implement the following interface:
+
+```typescript
+interface RedisLike {
+  get(key: string): Promise<string | null>;
+  set(
+    key: string,
+    value: string,
+    mode: string,
+    duration: number,
+  ): Promise<void>;
+  incr(key: string): Promise<number>;
+  expire(key: string, seconds: number): Promise<void>;
+}
+```
+
+Compatible Redis clients:
+
+- `ioredis`
+- `redis` (node-redis v4+)
+- `@upstash/redis`
+
+### Example with Upstash
+
+```typescript
+import { Redis } from "@upstash/redis";
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: 100,
+    windowMs: 60000,
+    redis: redis,
+  },
+});
+```
+
+## Handling Rate Limit Errors
+
+When rate limit is exceeded, the SDK throws an error:
+
+```typescript
+import { MpesaClient } from "@singularity-payments/core";
+
+try {
+  const response = await mpesa.stkPush({
+    amount: 100,
+    phoneNumber: "254712345678",
+    accountReference: "INV-001",
+    transactionDesc: "Payment",
+  });
+} catch (error: any) {
+  if (error.message.includes("Rate limit exceeded")) {
+    console.error("Too many requests, please try again later");
+    return {
+      error: "Rate limit exceeded",
+      retryAfter: 60,
+    };
+  }
+  throw error;
+}
+```
+
+## Monitoring Rate Limits
+
+Check current usage for a specific key:
+
+```typescript
+const usage = mpesa.getRateLimitUsage("stk:254712345678");
+
+if (usage) {
+  console.log({
+    count: usage.count,
+    resetAt: new Date(usage.resetAt),
+  });
+}
+```
+
+## Best Practices
+
+### Per-User Rate Limiting
+
+Implement per-user rate limiting in your application:
+
+```typescript
+async function initiatePayment(
+  userId: string,
+  phoneNumber: string,
+  amount: number,
+) {
+  const userKey = `user:${userId}:payments`;
+  const usage = mpesa.getRateLimitUsage(userKey);
+
+  if (usage && usage.count >= 5) {
+    const resetIn = Math.ceil((usage.resetAt - Date.now()) / 1000);
+    throw new Error(`Rate limit exceeded. Try again in ${resetIn} seconds`);
+  }
+
+  return await mpesa.stkPush({
+    amount,
+    phoneNumber,
+    accountReference: `USER-${userId}`,
+    transactionDesc: "Payment",
+  });
+}
+```
+
+### Graceful Degradation
+
+Implement fallback behavior when rate limits are hit:
+
+```typescript
+async function processPayment(data: PaymentData) {
+  try {
+    return await mpesa.stkPush(data);
+  } catch (error: any) {
+    if (error.message.includes("Rate limit exceeded")) {
+      await queuePayment(data);
+      return {
+        queued: true,
+        message: "Payment queued for processing",
+      };
+    }
+    throw error;
+  }
+}
+```
+
+### Progressive Rate Limiting
+
+Adjust limits based on user behavior:
+
+```typescript
+function getRateLimitForUser(userId: string): number {
+  const userTier = getUserTier(userId);
+
+  switch (userTier) {
+    case "premium":
+      return 200;
+    case "standard":
+      return 100;
+    case "free":
+      return 50;
+    default:
+      return 50;
+  }
+}
+
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: getRateLimitForUser(currentUserId),
+    windowMs: 60000,
+  },
+});
+```
+
+### Cleanup
+
+When using in-memory rate limiting, cleanup resources when shutting down:
+
+```typescript
+process.on("SIGTERM", () => {
+  mpesa.destroy();
+  process.exit(0);
+});
+```
+
+## Rate Limit Headers
+
+The SDK does not expose rate limit headers from M-Pesa API. Monitor your usage through the `getRateLimitUsage` method instead.
+
+## Testing
+
+Disable rate limiting in test environments:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: process.env.NODE_ENV === "production",
+  },
+});
+```
+
+## Troubleshooting
+
+### Rate Limit Not Working
+
+Ensure rate limiting is enabled:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+  },
+});
+```
+
+### Redis Connection Issues
+
+Verify Redis connection:
+
+```typescript
+redis.on("error", (error) => {
+  console.error("Redis connection error:", error);
+});
+
+redis.on("connect", () => {
+  console.log("Redis connected successfully");
+});
+```
+
+### Inconsistent Limits Across Servers
+
+Use Redis for distributed rate limiting across multiple servers:
+
+```typescript
+const mpesa = new MpesaClient(config, {
+  rateLimitOptions: {
+    enabled: true,
+    maxRequests: 100,
+    windowMs: 60000,
+    redis: redis,
+  },
+});
+```
+
+## Configuration Reference
+
+### RateLimitOptions
+
+| Parameter     | Type      | Default | Description                                     |
+| ------------- | --------- | ------- | ----------------------------------------------- |
+| `enabled`     | boolean   | `true`  | Enable or disable rate limiting                 |
+| `maxRequests` | number    | `100`   | Maximum number of requests per window           |
+| `windowMs`    | number    | `60000` | Time window in milliseconds (default: 1 minute) |
+| `redis`       | RedisLike | `null`  | Redis instance for distributed rate limiting    |
+
+### Rate Limit Recommendations
+
+| Environment  | Max Requests | Window | Notes                                |
+| ------------ | ------------ | ------ | ------------------------------------ |
+| Development  | Unlimited    | N/A    | Disable rate limiting                |
+| Staging      | 50           | 1 min  | Conservative limits for testing      |
+| Production   | 100          | 1 min  | Balance between safety and usability |
+| High Traffic | 200          | 1 min  | Use Redis and monitor closely        |
+
+## M-Pesa API Limits
+
+M-Pesa imposes its own rate limits:
+
+- STK Push: 10 requests per second
+- B2C: 5 requests per second
+- B2B: 5 requests per second
+- Account Balance: 1 request per second
+
+The SDK's rate limiting helps you stay within these limits. Adjust your configuration accordingly.

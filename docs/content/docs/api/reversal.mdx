@@ -1,0 +1,416 @@
+---
+title: Reversals
+description: Reverse M-Pesa transactions to return funds to customers
+---
+
+## Overview
+
+Reversals allow you to reverse completed M-Pesa transactions and return funds to the customer. This is useful for refunds, incorrect payments, or cancelled orders.
+
+## How It Works
+
+1. **Initiate Reversal**: Your application sends a reversal request to M-Pesa with the original transaction ID
+2. **M-Pesa Processes**: M-Pesa validates and processes the reversal request
+3. **Receive Callback**: M-Pesa sends the reversal result to your callback URL
+4. **Process Result**: Your application processes the reversal confirmation
+
+## Implementation
+
+### Server-Side
+
+```typescript
+const response = await mpesa.client.reversal({
+  transactionID: "RJK91H4K0V",
+  amount: 100,
+  remarks: "Refund for cancelled order",
+  occasion: "Order #12345 cancelled",
+});
+```
+
+The response will look like this if successful:
+
+```json
+{
+  "ConversationID": "AG_20240122_00004e4e9b8b9d9e9f9g",
+  "OriginatorConversationID": "29115-34620561-1",
+  "ResponseCode": "0",
+  "ResponseDescription": "Accept the service request successfully."
+}
+```
+
+### Complete Example with Database
+
+```typescript
+import { db } from "./db";
+import { reversals, payments } from "./schema";
+import { eq } from "drizzle-orm";
+import { mpesa } from "@/lib/mpesa";
+
+interface ReversalRequest {
+  paymentId: string;
+  reason: string;
+}
+
+async function initiateReversal(request: ReversalRequest) {
+  const { paymentId, reason } = request;
+
+  try {
+    // 1. Get the original payment from database
+    const payment = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, paymentId))
+      .limit(1);
+
+    if (payment.length === 0) {
+      throw new Error("Payment not found");
+    }
+
+    if (payment[0].status !== "completed") {
+      throw new Error("Can only reverse completed payments");
+    }
+
+    if (!payment[0].mpesaReceiptNumber) {
+      throw new Error("M-Pesa receipt number not found");
+    }
+
+    // 2. Initiate M-Pesa reversal
+    const response = await mpesa.client.reversal({
+      transactionID: payment[0].mpesaReceiptNumber,
+      amount: Number(payment[0].amount),
+      remarks: reason,
+      occasion: `Reversal for payment ${paymentId}`,
+    });
+
+    // 3. Store the reversal with pending status
+    await db.insert(reversals).values({
+      conversationId: response.ConversationID,
+      originatorConversationId: response.OriginatorConversationID,
+      paymentId,
+      transactionId: payment[0].mpesaReceiptNumber,
+      amount: payment[0].amount,
+      reason,
+      status: "pending",
+      createdAt: new Date(),
+    });
+
+    // 4. Update payment status
+    await db
+      .update(payments)
+      .set({
+        status: "reversal_pending",
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, paymentId));
+
+    return {
+      success: true,
+      conversationId: response.ConversationID,
+      message: response.ResponseDescription,
+    };
+  } catch (error) {
+    console.error("Reversal failed:", error);
+    throw error;
+  }
+}
+```
+
+### Handling Reversal Callbacks
+
+```typescript
+const mpesa = new MpesaClient(
+  {
+    // ... your config
+  },
+  {
+    callbackOptions: {
+      onReversalResult: async (data) => {
+        if (data.isSuccess) {
+          console.log("Reversal successful:", {
+            transactionId: data.transactionId,
+          });
+
+          // Update database
+          await db
+            .update(reversals)
+            .set({
+              status: "completed",
+              completedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(reversals.transactionId, data.transactionId));
+
+          // Update original payment
+          await db
+            .update(payments)
+            .set({
+              status: "reversed",
+              updatedAt: new Date(),
+            })
+            .where(eq(payments.mpesaReceiptNumber, data.transactionId));
+
+          // Notify customer
+          await sendReversalNotification(data.transactionId);
+        } else {
+          console.log("Reversal failed:", {
+            error: data.errorMessage,
+          });
+
+          // Update reversal status
+          await db
+            .update(reversals)
+            .set({
+              status: "failed",
+              errorMessage: data.errorMessage,
+              updatedAt: new Date(),
+            })
+            .where(eq(reversals.transactionId, data.transactionId));
+
+          // Restore original payment status
+          await db
+            .update(payments)
+            .set({
+              status: "completed",
+              updatedAt: new Date(),
+            })
+            .where(eq(payments.mpesaReceiptNumber, data.transactionId));
+        }
+      },
+    },
+  },
+);
+```
+
+## API Reference
+
+### Reversal Request
+
+```typescript
+interface ReversalRequest {
+  transactionID: string;
+  amount: number;
+  receiverParty?: string;
+  receiverIdentifierType?: "1" | "2" | "4" | "11";
+  remarks?: string;
+  occasion?: string;
+  resultUrl?: string;
+  timeoutUrl?: string;
+}
+```
+
+#### Parameters
+
+| Parameter                | Type   | Required | Description                                                                  |
+| ------------------------ | ------ | -------- | ---------------------------------------------------------------------------- |
+| `transactionID`          | string | Yes      | M-Pesa transaction ID to reverse (receipt number)                            |
+| `amount`                 | number | Yes      | Amount to reverse in KES. Must match original amount                         |
+| `receiverParty`          | string | No       | Receiving party shortcode. Defaults to config shortcode                      |
+| `receiverIdentifierType` | string | No       | Identifier type: 1=MSISDN, 2=Till, 4=Paybill, 11=Shortcode. Defaults to "11" |
+| `remarks`                | string | No       | Reason for reversal. Defaults to "Transaction reversal"                      |
+| `occasion`               | string | No       | Additional information                                                       |
+| `resultUrl`              | string | No       | Override default callback URL for results                                    |
+| `timeoutUrl`             | string | No       | Override default timeout URL                                                 |
+
+### Reversal Response
+
+```typescript
+interface ReversalResponse {
+  ConversationID: string;
+  OriginatorConversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
+}
+```
+
+#### Response Codes
+
+| Code           | Description               | Action                           |
+| -------------- | ------------------------- | -------------------------------- |
+| `0`            | Success. Request accepted | Wait for callback                |
+| `1`            | Rejected                  | Check error message and retry    |
+| `500.001.1001` | Invalid credentials       | Verify consumer key/secret       |
+| `404.001.03`   | Invalid transaction ID    | Verify transaction ID is correct |
+
+### Callback Data Structure
+
+```typescript
+interface ReversalCallbackData {
+  isSuccess: boolean;
+  transactionId?: string;
+  errorMessage?: string;
+}
+```
+
+## Best Practices
+
+### 1. Validate Before Reversing
+
+Always verify the transaction exists and is eligible for reversal:
+
+```typescript
+async function canReverse(transactionId: string): Promise<boolean> {
+  const payment = await db.payment.findUnique({
+    where: { mpesaReceiptNumber: transactionId },
+  });
+
+  if (!payment) return false;
+  if (payment.status !== "completed") return false;
+  if (payment.isReversed) return false;
+
+  // Check if transaction is within reversal window (e.g., 30 days)
+  const daysSincePayment =
+    (Date.now() - payment.completedAt.getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSincePayment > 30) return false;
+
+  return true;
+}
+```
+
+### 2. Store Reversal Attempts
+
+Track all reversal attempts for audit purposes:
+
+```typescript
+await db.reversalAttempt.create({
+  data: {
+    paymentId: payment.id,
+    transactionId: payment.mpesaReceiptNumber,
+    amount: payment.amount,
+    reason: reason,
+    initiatedBy: userId,
+    status: "pending",
+    conversationId: response.ConversationID,
+  },
+});
+```
+
+### 3. Handle Partial Reversals
+
+If you need to reverse only part of a transaction, create a new B2C payment instead:
+
+```typescript
+// Don't use reversal for partial amounts
+// Use B2C payment instead
+await mpesa.client.b2c({
+  amount: partialAmount,
+  phoneNumber: customer.phone,
+  commandID: "BusinessPayment",
+  remarks: "Partial refund",
+});
+```
+
+### 4. Implement Reversal Limits
+
+Protect against accidental multiple reversals:
+
+```typescript
+const recentReversals = await db.reversal.count({
+  where: {
+    paymentId: payment.id,
+    createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+  },
+});
+
+if (recentReversals > 0) {
+  throw new Error("Reversal already attempted for this payment");
+}
+```
+
+### 5. Notify All Parties
+
+Keep customers and admins informed:
+
+```typescript
+callbackOptions: {
+  onReversalResult: async (data) => {
+    if (data.isSuccess) {
+      // Notify customer
+      await sendEmail({
+        to: customer.email,
+        subject: "Refund Processed",
+        body: `Your refund of KES ${amount} has been processed.`,
+      });
+
+      // Notify admin
+      await notifyAdmin({
+        message: `Reversal completed for transaction ${data.transactionId}`,
+      });
+    }
+  },
+}
+```
+
+## Troubleshooting
+
+### "Invalid Transaction ID"
+
+**Cause**: Transaction ID is incorrect or doesn't exist
+
+**Solution**:
+
+- Verify you're using the M-Pesa receipt number from the original transaction
+- Check the transaction exists in M-Pesa's system
+- Ensure transaction is recent enough to be reversed
+
+### "Transaction Already Reversed"
+
+**Cause**: The transaction has already been reversed
+
+**Solution**:
+
+- Check your database for existing reversal records
+- Implement duplicate reversal prevention
+- Query M-Pesa transaction status before attempting reversal
+
+### "Insufficient Permissions"
+
+**Cause**: Initiator credentials don't have reversal permissions
+
+**Solution**:
+
+```typescript
+// Verify credentials in config
+{
+  initiatorName: "YOUR_INITIATOR_NAME",
+  securityCredential: "YOUR_SECURITY_CREDENTIAL",
+  // These must have reversal permissions
+}
+```
+
+### Callback Not Received
+
+**Causes**:
+
+1. Result URL not publicly accessible
+2. Firewall blocking Safaricom IPs
+3. Incorrect route configuration
+
+**Solutions**:
+
+```bash
+# 1. Use ngrok for local development
+ngrok http 3000
+
+# 2. Verify route exists
+# app/api/mpesa/reversal/result/route.ts
+
+# 3. Check Safaricom IPs are allowed
+# 196.201.214.200, 196.201.214.206, etc.
+```
+
+### Amount Mismatch
+
+**Cause**: Reversal amount doesn't match original transaction amount
+
+**Solution**:
+
+- M-Pesa requires full transaction reversals
+- For partial refunds, use B2C payments instead
+
+## Important Notes
+
+1. **Full Reversals Only**: M-Pesa reversals must be for the full transaction amount
+2. **Time Limits**: Reversals are typically limited to transactions within 30 days
+3. **One Reversal Per Transaction**: Each transaction can only be reversed once
+4. **Initiator Permissions**: Ensure your initiator has reversal permissions enabled
+5. **Customer Impact**: Funds are returned to the customer's M-Pesa account immediately upon success
