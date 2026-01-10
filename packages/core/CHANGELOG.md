@@ -1,5 +1,11 @@
 # @singularity-payments/core
 
+## 1.3.4
+
+### Patch Changes
+
+- 473a23a: Mpesa TransactionStatus Parsing corrected
+
 ## 1.3.3
 
 ### Patch Changes

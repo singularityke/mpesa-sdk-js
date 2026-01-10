@@ -5,9 +5,9 @@ import {
   type B2CCallback,
   type B2BCallback,
   type AccountBalanceCallback,
-  type AccountBalanceRequest,
   type TransactionStatusCallback,
   type ReversalCallback,
+  type AccountBalanceRequest,
   C2BSimulateRequest,
 } from "@singularity-payments/core";
 import {
@@ -45,6 +45,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaEventHandlers {
         };
       }
     }),
+
     /**
      * C2B simulation handler (for testing)
      * Simulates a C2B payment transaction
@@ -171,39 +172,168 @@ export function createMpesaHandlers(client: MpesaClient): MpesaEventHandlers {
     }),
 
     /**
+     * B2B result handler
+     * Handles callbacks from M-Pesa after B2B requests
+     */
+    b2bResult: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody<B2BCallback>(event);
+        const response = await client.handleB2BCallback(body);
+        return response;
+      } catch (error: any) {
+        console.error("B2B Result error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * B2B timeout handler
+     * Handles timeout notifications from M-Pesa for B2B requests
+     */
+    b2bTimeout: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody(event);
+        console.log("B2B Timeout:", body);
+
+        return {
+          ResultCode: 0,
+          ResultDesc: "Timeout received",
+        };
+      } catch (error: any) {
+        console.error("B2B Timeout error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * Account balance result handler
+     * Handles callbacks from M-Pesa after balance query requests
+     */
+    balanceResult: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody<AccountBalanceCallback>(event);
+        const response = await client.handleAccountBalanceCallback(body);
+        return response;
+      } catch (error: any) {
+        console.error("Balance Result error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * Account balance timeout handler
+     * Handles timeout notifications from M-Pesa for balance queries
+     */
+    balanceTimeout: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody(event);
+        console.log("Balance Timeout:", body);
+
+        return {
+          ResultCode: 0,
+          ResultDesc: "Timeout received",
+        };
+      } catch (error: any) {
+        console.error("Balance Timeout error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * Transaction status result handler
+     * Handles callbacks from M-Pesa after status query requests
+     */
+    statusResult: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody<TransactionStatusCallback>(event);
+        const response = await client.handleTransactionStatusCallback(body);
+        return response;
+      } catch (error: any) {
+        console.error("Status Result error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * Transaction status timeout handler
+     * Handles timeout notifications from M-Pesa for status queries
+     */
+    statusTimeout: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody(event);
+        console.log("Status Timeout:", body);
+
+        return {
+          ResultCode: 0,
+          ResultDesc: "Timeout received",
+        };
+      } catch (error: any) {
+        console.error("Status Timeout error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * Reversal result handler
+     * Handles callbacks from M-Pesa after reversal requests
+     */
+    reversalResult: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody<ReversalCallback>(event);
+        const response = await client.handleReversalCallback(body);
+        return response;
+      } catch (error: any) {
+        console.error("Reversal Result error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
+     * Reversal timeout handler
+     * Handles timeout notifications from M-Pesa for reversal requests
+     */
+    reversalTimeout: defineEventHandler(async (event) => {
+      try {
+        const body = await readBody(event);
+        console.log("Reversal Timeout:", body);
+
+        return {
+          ResultCode: 0,
+          ResultDesc: "Timeout received",
+        };
+      } catch (error: any) {
+        console.error("Reversal Timeout error:", error);
+        return {
+          ResultCode: 1,
+          ResultDesc: "Processing failed",
+        };
+      }
+    }),
+
+    /**
      * Catch-all handler for all M-Pesa webhooks and client-side API requests
      * Routes based on URL path segment
-     *
-     * Usage: server/api/mpesa/[...mpesa].ts
-     * export default mpesa.handlers.catchAll;
-     *
-     * Supported endpoints:
-     *
-     * WEBHOOKS (from M-Pesa):
-     * - /api/mpesa/callback or /api/mpesa/stk-callback - STK Push callbacks
-     * - /api/mpesa/validation or /api/mpesa/c2b-validation - C2B validation
-     * - /api/mpesa/confirmation or /api/mpesa/c2b-confirmation - C2B confirmation
-     * - /api/mpesa/b2c-result - B2C result callback
-     * - /api/mpesa/b2c-timeout - B2C timeout callback
-     * - /api/mpesa/b2b-result - B2B result callback
-     * - /api/mpesa/b2b-timeout - B2B timeout callback
-     * - /api/mpesa/balance-result - Account balance result
-     * - /api/mpesa/balance-timeout - Account balance timeout
-     * - /api/mpesa/reversal-result - Reversal result
-     * - /api/mpesa/reversal-timeout - Reversal timeout
-     * - /api/mpesa/status-result - Transaction status result
-     * - /api/mpesa/status-timeout - Transaction status timeout
-     *
-     * CLIENT APIs (from the frontend):
-     * - /api/mpesa/stk-push - Initiate STK Push request
-     * - /api/mpesa/stk-query - Query STK Push status
-     * - /api/mpesa/b2c - Initiate B2C payment
-     * - /api/mpesa/b2b - Initiate B2B payment
-     * - /api/mpesa/balance - Query account balance
-     * - /api/mpesa/transaction-status - Query transaction status
-     * - /api/mpesa/reversal - Reverse a transaction
-     * - /api/mpesa/register-c2b - Register C2B URLs
-     * - /api/mpesa/generate-qr - Generate dynamic QR code
      */
     catchAll: defineEventHandler(async (event) => {
       const url = getRequestURL(event);
@@ -344,6 +474,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaEventHandlers {
 
           return response;
         }
+
         if (lastSegment === "simulate-c2b") {
           const body = await readBody<{
             shortCode?: string;
@@ -375,6 +506,7 @@ export function createMpesaHandlers(client: MpesaClient): MpesaEventHandlers {
 
           return response;
         }
+
         // Query STK Push transaction status
         if (lastSegment === "stk-query") {
           const body = await readBody<{ CheckoutRequestID?: string }>(event);

@@ -1,5 +1,13 @@
 # @singularity-payments/express
 
+## 1.2.5
+
+### Patch Changes
+
+- 473a23a: Mpesa TransactionStatus Parsing corrected
+- Updated dependencies [473a23a]
+  - @singularity-payments/core@1.3.4
+
 ## 1.2.4
 
 ### Patch Changes

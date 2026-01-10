@@ -1,6 +1,6 @@
 {
   "name": "@singularity-payments/hono",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "publishConfig": {
     "access": "public"
   },
@@ -20,7 +20,11 @@
     "dist"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest watch",
     "build": "tsup src/index.ts --format cjs,esm --dts --external hono",
     "dev": "tsup src/index.ts --format cjs,esm --dts --external hono --watch"
   },
@@ -46,8 +50,11 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.3",
+    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/ui": "^4.0.16",
     "hono": "^4.6.16",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }

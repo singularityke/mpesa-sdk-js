@@ -1,5 +1,11 @@
 # docs
 
+## 0.0.6
+
+### Patch Changes
+
+- 473a23a: Mpesa TransactionStatus Parsing corrected
+
 ## 0.0.5
 
 ### Patch Changes
