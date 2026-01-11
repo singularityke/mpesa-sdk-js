@@ -20,6 +20,10 @@
     "dist"
   ],
   "scripts": {
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:run": "vitest run",
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch"
   },
@@ -42,10 +46,15 @@
     "@singularity-payments/core": "workspace:*"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
     "@types/node": "^25.0.3",
     "@types/react": "^18.3.0",
+    "@vitest/coverage-v8": "^4.0.16",
+    "happy-dom": "^20.1.0",
     "react": "^18.3.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }
